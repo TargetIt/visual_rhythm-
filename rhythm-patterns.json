@@ -1,0 +1,87 @@
+{
+  "rhythmLibrary": {
+    "basic": {
+      "name": "基础4拍节奏",
+      "difficulty": "easy",
+      "bpm": 120,
+      "timeSignature": "4/4",
+      "tracks": {
+        0: "X---X---X---X---",
+        1: "----X---X---X---", 
+        2: "--------X---X---",
+        3: "------------X---"
+      },
+      "description": "简单的四分音符，每个轨道错开一拍"
+    },
+    
+    "eighth": {
+      "name": "8分音符节奏",
+      "difficulty": "medium", 
+      "bpm": 140,
+      "timeSignature": "4/4",
+      "tracks": {
+        0: "X-X-X-X-X-X-X-X-",
+        1: "-X-X-X-X-X-X-X-X",
+        2: "X---X---X---X---",
+        3: "----X---X---X---"
+      },
+      "description": "8分音符和4分音符混合"
+    },
+    
+    "sixteenth": {
+      "name": "16分音符快节奏",
+      "difficulty": "hard",
+      "bpm": 160, 
+      "timeSignature": "4/4",
+      "tracks": {
+        0: "X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-",
+        1: "-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X",
+        2: "X---X---X---X---X---X---X---X---",
+        3: "----X---X---X---X---X---X---X---"
+      },
+      "description": "密集的16分音符模式"
+    },
+    
+    "complex": {
+      "name": "复杂混合节奏",
+      "difficulty": "expert",
+      "bpm": 130,
+      "timeSignature": "4/4", 
+      "tracks": {
+        0: "X-X-X---X-X-X---",
+        1: "-X-X-X---X-X-X-",
+        2: "X---X-X---X---X-",
+        3: "----X-X-X---X---"
+      },
+      "description": "不规则的复杂节奏模式"
+    },
+    
+    "breakbeat": {
+      "name": "Breakbeat风格",
+      "difficulty": "hard",
+      "bpm": 128,
+      "timeSignature": "4/4",
+      "tracks": {
+        0: "X---X---X-X-X---",
+        1: "-X-X-X---X-X-X-", 
+        2: "X-------X---X---",
+        3: "----X---X-X-----"
+      },
+      "description": "典型的Breakbeat节奏"
+    }
+  },
+  
+  "visualization": {
+    "symbols": {
+      "X": "强音符",
+      "x": "弱音符", 
+      "-": "休止符"
+    },
+    "colors": {
+      0: "#FF6B6B",
+      1: "#4ECDC4", 
+      2: "#45B7D1",
+      3: "#96CEB4"
+    }
+  }
+}
