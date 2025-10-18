@@ -105,9 +105,9 @@ export default class Main {
   startGameWithConfig(config) {
     console.log('开始游戏，配置:', config);
     
-    // 设置游戏配置
+    // 设置游戏配置（只使用JSON模式）
     GameGlobal.databus.setInitialBPM(config.bpm); // 设置初始BPM
-    this.beatGenerator.setRhythmType(config.rhythmType);
+    this.beatGenerator.setRhythmPattern(config.patternId); // 设置节奏模式
     this.beatGenerator.updateBPM(config.bpm);
     
     // 开始游戏
@@ -121,9 +121,9 @@ export default class Main {
   restartGameWithConfig(config) {
     console.log('游戏内重启，配置:', config);
     
-    // 应用新配置
+    // 应用新配置（只使用JSON模式）
     GameGlobal.databus.setInitialBPM(config.bpm);
-    this.beatGenerator.setRhythmType(config.rhythmType);
+    this.beatGenerator.setRhythmPattern(config.patternId); // 设置节奏模式
     this.beatGenerator.updateBPM(config.bpm);
     
     // 重置游戏状态但保持游戏运行

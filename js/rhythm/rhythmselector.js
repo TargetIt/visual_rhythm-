@@ -6,24 +6,15 @@ import PatternLoader from './patternloader';
 export default class RhythmSelector {
   constructor() {
     this.isVisible = true;
-    this.selectedRhythmType = '4分音符'; // 默认选择
-    this.selectedBPM = 60; // 默认BPM
-    this.bpmInput = 60; // 用户输入的BPM
+    this.selectedRhythmType = '基础4拍节奏'; // 默认选择
+    this.selectedBPM = 120; // 默认BPM
+    this.bpmInput = 120; // 用户输入的BPM
     
     // 节奏模式加载器
     this.patternLoader = new PatternLoader();
     
-    // 节奏类型选项（传统模式）
-    this.rhythmTypes = [
-      { name: '4分音符', value: 'quarter', description: '基础节拍，适合新手' },
-      { name: '8分音符', value: 'eighth', description: '中等速度，稍有挑战' },
-      { name: '16分音符', value: 'sixteenth', description: '快速节拍，挑战极限' },
-      { name: '混合型', value: 'mixed', description: '多种节拍混合，最高难度' },
-    ];
-    
-    // 新模式选项（从JSON加载）
+    // 节奏模式选项（从JSON加载）
     this.rhythmPatterns = [];
-    this.usePatternMode = false; // 是否使用新模式
     this.selectedPatternId = null;
     
     this.selectedIndex = 0; // 当前选中的节奏类型索引
@@ -55,8 +46,8 @@ export default class RhythmSelector {
     // UI位置和尺寸
     this.centerX = canvas.width / 2;
     this.centerY = canvas.height / 2;
-    this.cardWidth = 320; // 稍微增加宽度以适应下拉菜单
-    this.cardHeight = 380; // 调整高度
+    this.cardWidth = 320;
+    this.cardHeight = 350; // 调整高度，移除模式切换按钮后减小
     
     // 回调函数
     this.onStartGame = null;
@@ -277,14 +268,6 @@ export default class RhythmSelector {
       // 点击其他区域不退出，继续保持输入模式
       return;
     }
-    
-    // 检查是否点击了模式切换按钮
-    const modeToggle = this.getModeToggleArea();
-    if (this.isPointInRect(x, y, modeToggle)) {
-      this.toggleMode();
-      this.safeVibrate('light');
-      return;
-    }
 
     // 检查是否点击了节奏类型下拉菜单
     const dropdownTrigger = this.getDropdownTriggerArea();
@@ -300,8 +283,7 @@ export default class RhythmSelector {
       if (this.isPointInRect(x, y, dropdownList)) {
         const itemHeight = 40;
         const clickIndex = Math.floor((y - dropdownList.y) / itemHeight);
-        const options = this.usePatternMode ? this.rhythmPatterns : this.rhythmTypes;
-        if (clickIndex >= 0 && clickIndex < options.length) {
+        if (clickIndex >= 0 && clickIndex < this.rhythmPatterns.length) {
           this.selectRhythmType(clickIndex);
           this.safeVibrate('light');
         }
@@ -359,15 +341,6 @@ export default class RhythmSelector {
            y >= rect.y && y <= rect.y + rect.height;
   }
 
-  /**
-   * 切换模式（传统模式/新模式）
-   */
-  toggleMode() {
-    this.usePatternMode = !this.usePatternMode;
-    this.selectedIndex = 0; // 重置选择
-    this.closeDropdown();
-    console.log(`切换到${this.usePatternMode ? '新模式' : '传统模式'}`);
-  }
 
   /**
    * 切换下拉菜单状态
@@ -388,31 +361,20 @@ export default class RhythmSelector {
    * @param {number} index - 节奏类型索引
    */
   selectRhythmType(index) {
-    if (this.usePatternMode) {
-      // 新模式
-      if (index >= 0 && index < this.rhythmPatterns.length) {
-        this.selectedIndex = index;
-        this.selectedPatternId = this.rhythmPatterns[index].id;
-        this.selectedRhythmType = this.rhythmPatterns[index].name;
-        
-        // 自动设置BPM
-        const pattern = this.rhythmPatterns[index];
-        if (pattern.bpm) {
-          this.bpmInput = pattern.bpm;
-          this.selectedBPM = pattern.bpm;
-        }
-        
-        this.closeDropdown();
-        console.log(`选择节奏模式: ${pattern.name} (BPM: ${pattern.bpm})`);
+    if (index >= 0 && index < this.rhythmPatterns.length) {
+      this.selectedIndex = index;
+      this.selectedPatternId = this.rhythmPatterns[index].id;
+      this.selectedRhythmType = this.rhythmPatterns[index].name;
+      
+      // 自动设置BPM
+      const pattern = this.rhythmPatterns[index];
+      if (pattern.bpm) {
+        this.bpmInput = pattern.bpm;
+        this.selectedBPM = pattern.bpm;
       }
-    } else {
-      // 传统模式
-      if (index >= 0 && index < this.rhythmTypes.length) {
-        this.selectedIndex = index;
-        this.selectedRhythmType = this.rhythmTypes[index].name;
-        this.selectedPatternId = null; // 清除模式ID
-        this.closeDropdown();
-      }
+      
+      this.closeDropdown();
+      console.log(`选择节奏模式: ${pattern.name} (BPM: ${pattern.bpm})`);
     }
   }
 
@@ -422,7 +384,7 @@ export default class RhythmSelector {
   getDropdownTriggerArea() {
     return {
       x: this.centerX - this.cardWidth / 2 + 20,
-      y: this.centerY - this.cardHeight / 2 + 80,
+      y: this.centerY - this.cardHeight / 2 + 60,
       width: this.cardWidth - 40,
       height: 45
     };
@@ -433,8 +395,7 @@ export default class RhythmSelector {
    */
   getDropdownListArea() {
     const trigger = this.getDropdownTriggerArea();
-    const options = this.usePatternMode ? this.rhythmPatterns : this.rhythmTypes;
-    const listHeight = Math.min(options.length * 40, this.dropdownMaxHeight);
+    const listHeight = Math.min(this.rhythmPatterns.length * 40, this.dropdownMaxHeight);
     return {
       x: trigger.x,
       y: trigger.y + trigger.height,
@@ -620,28 +581,20 @@ export default class RhythmSelector {
    * 开始游戏
    */
   startGame() {
-    let config;
-    
-    if (this.usePatternMode && this.selectedPatternId) {
-      // 新模式配置
-      const pattern = this.rhythmPatterns[this.selectedIndex];
-      config = {
-        mode: 'pattern',
-        patternId: this.selectedPatternId,
-        rhythmName: pattern.name,
-        bpm: this.selectedBPM,
-        difficulty: pattern.difficulty,
-        timeSignature: pattern.timeSignature
-      };
-    } else {
-      // 传统模式配置
-      config = {
-        mode: 'traditional',
-        rhythmType: this.rhythmTypes[this.selectedIndex].value,
-        rhythmName: this.selectedRhythmType,
-        bpm: this.selectedBPM
-      };
+    if (!this.selectedPatternId) {
+      console.error('未选择节奏模式');
+      return;
     }
+    
+    const pattern = this.rhythmPatterns[this.selectedIndex];
+    const config = {
+      mode: 'pattern',
+      patternId: this.selectedPatternId,
+      rhythmName: pattern.name,
+      bpm: this.selectedBPM,
+      difficulty: pattern.difficulty,
+      timeSignature: pattern.timeSignature
+    };
     
     if (this.displayMode === 'initial') {
       // 初始模式：开始新游戏
@@ -710,10 +663,7 @@ export default class RhythmSelector {
     // 绘制标题
     this.renderTitle(ctx);
     
-    // 绘制模式切换按钮
-    this.renderModeToggle(ctx);
-    
-    // 绘制节奏类型下拉菜单
+    // 绘制节奏模式下拉菜单
     this.renderRhythmDropdown(ctx);
     
     // 绘制BPM选择
@@ -747,54 +697,12 @@ export default class RhythmSelector {
     ctx.fillStyle = '#ecf0f1';
     ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('选择节奏设置', this.centerX, this.centerY - this.cardHeight / 2 + 40);
+    ctx.fillText('选择节奏模式', this.centerX, this.centerY - this.cardHeight / 2 + 40);
   }
 
-  /**
-   * 绘制模式切换按钮
-   */
-  renderModeToggle(ctx) {
-    const toggleY = this.centerY - this.cardHeight / 2 + 70;
-    const toggleWidth = 120;
-    const toggleHeight = 35;
-    const toggleX = this.centerX - toggleWidth / 2;
-
-    // 绘制切换按钮背景
-    ctx.fillStyle = this.usePatternMode ? '#3498db' : '#34495e';
-    ctx.fillRect(toggleX, toggleY, toggleWidth, toggleHeight);
-
-    // 绘制边框
-    ctx.strokeStyle = '#ecf0f1';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(toggleX, toggleY, toggleWidth, toggleHeight);
-
-    // 绘制切换按钮文字
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px Arial';
-    ctx.textAlign = 'center';
-    const modeText = this.usePatternMode ? '新模式' : '传统模式';
-    ctx.fillText(modeText, this.centerX, toggleY + toggleHeight / 2 + 5);
-  }
 
   /**
-   * 获取模式切换按钮区域
-   */
-  getModeToggleArea() {
-    const toggleY = this.centerY - this.cardHeight / 2 + 70;
-    const toggleWidth = 120;
-    const toggleHeight = 35;
-    const toggleX = this.centerX - toggleWidth / 2;
-
-    return {
-      x: toggleX,
-      y: toggleY,
-      width: toggleWidth,
-      height: toggleHeight
-    };
-  }
-
-  /**
-   * 绘制节奏类型下拉菜单
+   * 绘制节奏模式下拉菜单
    */
   renderRhythmDropdown(ctx) {
     const trigger = this.getDropdownTriggerArea();
@@ -803,8 +711,7 @@ export default class RhythmSelector {
     ctx.fillStyle = '#ecf0f1';
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'left';
-    const titleText = this.usePatternMode ? '节奏模式:' : '节奏类型:';
-    ctx.fillText(titleText, trigger.x, trigger.y - 10);
+    ctx.fillText('节奏模式:', trigger.x, trigger.y - 10);
     
     // 绘制下拉菜单触发器
     ctx.fillStyle = '#34495e';
@@ -815,13 +722,8 @@ export default class RhythmSelector {
     ctx.lineWidth = 2;
     ctx.strokeRect(trigger.x, trigger.y, trigger.width, trigger.height);
     
-    // 绘制当前选中的节奏类型
-    let selectedItem;
-    if (this.usePatternMode) {
-      selectedItem = this.rhythmPatterns[this.selectedIndex] || { name: '未选择' };
-    } else {
-      selectedItem = this.rhythmTypes[this.selectedIndex];
-    }
+    // 绘制当前选中的节奏模式
+    const selectedItem = this.rhythmPatterns[this.selectedIndex] || { name: '未选择' };
     
     ctx.fillStyle = '#ecf0f1';
     ctx.font = 'bold 16px Arial';
@@ -877,11 +779,8 @@ export default class RhythmSelector {
     ctx.lineWidth = 2;
     ctx.strokeRect(listArea.x, listArea.y, listArea.width, listArea.height);
     
-    // 获取当前模式下的选项列表
-    const options = this.usePatternMode ? this.rhythmPatterns : this.rhythmTypes;
-    
-    // 绘制每个选项
-    options.forEach((type, index) => {
+    // 绘制每个节奏模式选项
+    this.rhythmPatterns.forEach((type, index) => {
       const itemY = listArea.y + index * 40;
       const isSelected = index === this.selectedIndex;
       const isHovered = false; // 可以后续添加悬停效果
@@ -1146,25 +1045,18 @@ export default class RhythmSelector {
    * 获取当前选择的配置
    */
   getSelectedConfig() {
-    if (this.usePatternMode && this.selectedPatternId) {
-      // 新模式配置
-      const pattern = this.rhythmPatterns[this.selectedIndex];
-      return {
-        mode: 'pattern',
-        patternId: this.selectedPatternId,
-        rhythmName: pattern.name,
-        bpm: this.selectedBPM,
-        difficulty: pattern.difficulty,
-        timeSignature: pattern.timeSignature
-      };
-    } else {
-      // 传统模式配置
-      return {
-        mode: 'traditional',
-        rhythmType: this.rhythmTypes[this.selectedIndex].value,
-        rhythmName: this.selectedRhythmType,
-        bpm: this.selectedBPM
-      };
+    if (!this.selectedPatternId) {
+      return null;
     }
+    
+    const pattern = this.rhythmPatterns[this.selectedIndex];
+    return {
+      mode: 'pattern',
+      patternId: this.selectedPatternId,
+      rhythmName: pattern.name,
+      bpm: this.selectedBPM,
+      difficulty: pattern.difficulty,
+      timeSignature: pattern.timeSignature
+    };
   }
 }
