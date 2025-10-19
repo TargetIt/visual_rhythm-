@@ -2,79 +2,19 @@ import Note from './note';
 import PatternLoader from './patternloader';
 
 /**
- * 节拍生成器 - 基于BPM生成节奏点
+ * 节拍生成器 - 基于JSON模式生成节奏点
  */
 export default class BeatGenerator {
   constructor() {
-    this.lastBeatTime = 0;
-    this.beatInterval = 0; // 两个节拍之间的间隔（毫秒）
-    this.sixteenthInterval = 0; // 16分音符间隔（毫秒）
-    this.eighthInterval = 0; // 8分音符间隔（毫秒）
-    this.beatCounter = 0; // 节拍计数器
-    this.sixteenthCounter = 0; // 16分音符计数器
-    
-    // 节奏类型配置
-    this.rhythmType = 'quarter'; // 当前节奏类型
-    this.forcedRhythmType = null; // 强制设置的节奏类型
-    
     // 节奏模式加载器
     this.patternLoader = new PatternLoader();
     this.loadPatternData(); // 加载节奏模式数据
     
-    this.patterns = [
-      // 简单模式 - 主要使用4分音符
-      [0, 1, 2, 3],
-      [0, 2, 1, 3],
-      [1, 3, 0, 2],
-      // 中等模式 - 开始加入8分音符
-      [0, 0, 1, 2],
-      [1, 1, 2, 3],
-      [0, 2, 2, 1],
-      // 复杂模式 - 包含16分音符
-      [0, 1, 0, 2, 1, 3],
-      [2, 0, 3, 1, 2, 0],
-      [1, 2, 3, 0, 1, 2]
-    ];
-    
-    // 8分音符模式
-    this.eighthPatterns = [
-      [0, -1, 1, -1, 2, -1, 3, -1], // 基础8分音符
-      [0, 1, -1, 2, -1, 3, -1, 0], // 混合8分音符
-      [0, -1, 0, -1, 1, -1, 2, 3], // 变化8分音符
-      [-1, 0, -1, 1, -1, 2, -1, 3], // 间陟8分音符
-    ];
-    
-    // 16分音符模式（更密集的节拍）
-    this.sixteenthPatterns = [
-      [0, -1, 1, -1, 2, -1, 3, -1], // 基础16分音符
-      [0, 1, -1, 2, -1, 3, 0, -1], // 混合模式
-      [0, -1, 0, 1, -1, 2, 1, 3], // 快速连击
-      [-1, 0, 1, -1, 2, -1, 3, 1], // 复杂16分音符
-      [0, 1, 2, -1, 3, 0, -1, 2] // 高级16分音符
-    ];
-    
-    // 混合模式 - 随机切换不同节奏
-    this.mixedPatterns = {
-      quarter: this.patterns,
-      eighth: this.eighthPatterns,
-      sixteenth: this.sixteenthPatterns
-    };
-    
-    this.currentPatternIndex = 0;
-    this.patternPosition = 0;
-    this.use16thNotes = false; // 是否启用16分音符
-    this.use8thNotes = false; // 是否启用8分音符
-    this.sixteenthDensity = 0.3; // 16分音符密度（0-1）
-    this.eighthDensity = 0.5; // 8分音符密度（0-1）
-    
-    // 混合模式相关
-    this.mixedModeTimer = 0;
-    this.currentMixedType = 'quarter';
-    this.mixedSwitchInterval = 8; // 每8个节拍切换一次
-    
-    // 新模式相关
+    // JSON模式相关
     this.patternStartTime = 0;
     this.lastPatternTime = 0;
+    this.currentNotes = []; // 当前模式的音符序列
+    this.bpm = 120; // 当前BPM
   }
 
   /**
@@ -84,26 +24,31 @@ export default class BeatGenerator {
     try {
       // 在小程序环境中，需要动态加载JSON文件
       if (typeof wx !== 'undefined') {
-        wx.request({
-          url: '../../rhythm-patterns.json',
-          method: 'GET',
-          success: (res) => {
-            if (res.statusCode === 200 && res.data) {
-              this.patternLoader.loadPatterns(res.data);
-              console.log('节奏模式数据加载成功');
-            } else {
-              console.error('加载节奏模式数据失败:', res);
-              this.loadDefaultPatterns();
-            }
-          },
-          fail: (err) => {
-            console.error('请求节奏模式数据失败:', err);
-            this.loadDefaultPatterns();
-          }
-        });
+        // 使用微信小程序的文件系统读取本地JSON文件
+        const fs = wx.getFileSystemManager();
+        try {
+          const data = fs.readFileSync('rhythm-patterns.json', 'utf8');
+          const patternData = JSON.parse(data);
+          this.patternLoader.loadPatterns(patternData);
+          console.log('节奏模式数据加载成功');
+          // 尝试设置第一个可用模式为默认模式
+          this.setFirstAvailablePattern();
+        } catch (readErr) {
+          console.error('读取节奏模式数据失败:', readErr);
+          this.loadDefaultPatterns();
+        }
       } else {
-        // 在浏览器环境中，可以直接导入
-        this.loadDefaultPatterns();
+        // 在浏览器环境中，使用require加载JSON文件
+        try {
+          const patternData = require('../../rhythm-patterns.json');
+          this.patternLoader.loadPatterns(patternData);
+          console.log('节奏模式数据加载成功');
+          // 尝试设置第一个可用模式为默认模式
+          this.setFirstAvailablePattern();
+        } catch (err) {
+          console.error('加载节奏模式数据失败:', err);
+          this.loadDefaultPatterns();
+        }
       }
     } catch (error) {
       console.error('加载节奏模式数据时出错:', error);
@@ -164,47 +109,16 @@ export default class BeatGenerator {
   }
 
   /**
-   * 更新BPM，重新计算节拍间隔
+   * 更新BPM
    * @param {number} bpm - 每分钟节拍数
    */
   updateBPM(bpm) {
-    this.beatInterval = (60 / bpm) * 1000; // 转换为毫秒
-    this.sixteenthInterval = this.beatInterval / 4; // 16分音符是4分音符的1/4
-    this.eighthInterval = this.beatInterval / 2; // 8分音符是4分音符的1/2
-  }
-
-  /**
-   * 设置节奏类型
-   * @param {string} type - 节奏类型（quarter/eighth/sixteenth/mixed）
-   */
-  setRhythmType(type) {
-    this.rhythmType = type;
-    this.forcedRhythmType = type;
-    
-    // 重置相关状态
-    this.use16thNotes = false;
-    this.use8thNotes = false;
-    this.currentMixedType = 'quarter';
-    this.mixedModeTimer = 0;
-    
-    switch (type) {
-      case 'quarter':
-        // 4分音符模式，保持默认设置
-        break;
-      case 'eighth':
-        this.use8thNotes = true;
-        this.eighthDensity = 0.7;
-        break;
-      case 'sixteenth':
-        this.use16thNotes = true;
-        this.sixteenthDensity = 0.6;
-        break;
-      case 'mixed':
-        // 混合模式将在生成过程中动态切换
-        break;
-    }
-    
-    console.log(`设置节奏类型为: ${type}`);
+    const oldBPM = this.bpm;
+    this.bpm = bpm;
+    console.log(`[BeatGenerator] BPM更新: ${oldBPM} -> ${bpm}`);
+    // 计算每拍的时间（毫秒）
+    const beatInterval = 60000 / bpm;
+    console.debug(`[BeatGenerator] BPM: ${bpm}, 每拍间隔: ${beatInterval.toFixed(2)}ms`);
   }
 
   /**
@@ -229,7 +143,7 @@ export default class BeatGenerator {
           GameGlobal.databus.bpm = pattern.bpm;
         }
       }
-      console.log(`设置节奏模式: ${pattern.name} (BPM: ${pattern.bpm})`);
+      console.log(`设置节奏模式: ${pattern.name} (BPM: ${pattern.bpm})`, pattern);
     }
     return success;
   }
@@ -257,35 +171,14 @@ export default class BeatGenerator {
   generateBeats() {
     const now = Date.now();
     
-    // 如果还没有设置间隔，使用当前BPM
-    if (this.beatInterval === 0) {
-      this.updateBPM(GameGlobal.databus.bpm);
-      this.lastBeatTime = now;
-      return;
-    }
-
-    // 如果设置了JSON节奏模式，优先使用新模式
+    // 添加调试信息
+    console.log(`[BeatGenerator] 开始生成节拍 - 当前时间: ${now}, 数据已加载: ${this.patternLoader.isDataLoaded()}, 当前模式:`, this.patternLoader.getCurrentPattern()?.name);
+    
+    // 只使用JSON节奏模式
     if (this.patternLoader.isDataLoaded() && this.patternLoader.getCurrentPattern()) {
       this.generatePatternBeats(now);
-      return;
-    }
-
-    // 根据节奏类型选择生成策略
-    switch (this.rhythmType) {
-      case 'quarter':
-        this.generateQuarterBeats(now);
-        break;
-      case 'eighth':
-        this.generateEighthBeats(now);
-        break;
-      case 'sixteenth':
-        this.generate16thBeats(now);
-        break;
-      case 'mixed':
-        this.generateMixedBeats(now);
-        break;
-      default:
-        this.generateQuarterBeats(now);
+    } else {
+      console.warn('节奏模式未加载，无法生成节拍');
     }
   }
 
@@ -294,608 +187,173 @@ export default class BeatGenerator {
    */
   generatePatternBeats(now) {
     const pattern = this.patternLoader.getCurrentPattern();
-    if (!pattern) return;
+    if (!pattern) {
+      console.debug('[BeatGenerator] 无当前节奏模式');
+      return;
+    }
 
-    // 获取模式的音符序列
-    const notes = this.patternLoader.getCurrentPatternNotes();
-    if (!notes || notes.length === 0) return;
+    // 初始化模式开始时间
+    if (this.patternStartTime === 0) {
+      this.patternStartTime = now;
+      this.currentNotes = this.patternLoader.getCurrentPatternNotes();
+      // 标记所有音符未生成
+      this.currentNotes.forEach(note => note.generated = false);
+      console.log('初始化音符序列:', this.currentNotes);
+      console.debug(`[BeatGenerator] 模式 "${pattern.name}" 初始化 - 开始时间: ${this.patternStartTime}`);
+    }
 
     // 计算当前时间在模式中的位置
     const patternDuration = this.calculatePatternDuration(pattern);
-    const currentTimeInPattern = (now - this.patternStartTime) % patternDuration;
+    const elapsedTime = now - this.patternStartTime;
+    const currentTimeInPattern = elapsedTime % patternDuration;
+
+    // 添加详细的时间信息
+    console.debug(`[BeatGenerator] 时间计算 - 已耗时: ${elapsedTime}ms, 模式内时间: ${currentTimeInPattern}ms, 模式总长: ${patternDuration}ms`);
+
+    // 检查是否需要重置循环
+    if (currentTimeInPattern < this.lastPatternTime) {
+      // 新的一轮循环开始
+      this.patternStartTime = now - currentTimeInPattern;
+      this.currentNotes.forEach(note => note.generated = false);
+      console.log(`[BeatGenerator] 开始新的循环 - 模式: ${pattern.name}, BPM: ${this.bpm}`);
+      this.lastPatternTime = 0; // 重置lastPatternTime以避免比较错误
+    }
 
     // 检查是否有音符需要生成
-    notes.forEach(note => {
-      if (note.timing <= currentTimeInPattern && !note.generated) {
+    let notesGenerated = 0;
+    this.currentNotes.forEach(note => {
+      // 检查音符是否应该在这个时刻生成
+      if (!note.generated && 
+          currentTimeInPattern >= note.timing && 
+          this.lastPatternTime <= note.timing) {
         this.createPatternNote(note);
         note.generated = true;
+        console.log(`[BeatGenerator] 生成音符: ID=${note.id}, 轨道${note.track}, 时间${note.timing}ms, 类型=${note.type}, 强度=${note.velocity}`);
+        notesGenerated++;
       }
     });
 
-    // 重置模式循环
-    if (currentTimeInPattern < this.lastPatternTime) {
-      this.resetPatternGeneration(notes);
+    if (notesGenerated > 0) {
+      console.debug(`[BeatGenerator] 本轮生成了 ${notesGenerated} 个音符`);
     }
+
     this.lastPatternTime = currentTimeInPattern;
   }
 
   /**
-   * 计算节奏模式的持续时间
+   * 计算模式持续时间
+   * @param {Object} pattern - 节奏模式
+   * @returns {number} 持续时间(毫秒)
    */
   calculatePatternDuration(pattern) {
-    // 基于BPM和时间签名计算模式持续时间
-    const bpm = pattern.bpm || 120;
-    const timeSignature = pattern.timeSignature || "4/4";
-    const [beatsPerMeasure, noteValue] = timeSignature.split('/').map(Number);
+    // 获取最长轨道的长度作为模式长度
+    let maxLength = 0;
+    for (const trackKey in pattern.tracks) {
+      const trackLength = pattern.tracks[trackKey].length;
+      if (trackLength > maxLength) {
+        maxLength = trackLength;
+      }
+    }
     
-    // 计算一个小节的持续时间（毫秒）
-    const beatDuration = (60 / bpm) * 1000;
-    const measureDuration = beatDuration * beatsPerMeasure;
+    console.log(`模式最长轨道长度: ${maxLength}`);
     
-    return measureDuration;
+    // 基于BPM和模式长度计算持续时间
+    // 假设每个字符代表一个1/4拍（8分音符）
+    const timePerBeat = 60 / pattern.bpm * 1000; // 每拍的毫秒数
+    const timePerUnit = timePerBeat / 2; // 每个字符的时间（1/4拍 = 1/2 * 1拍）
+    const duration = maxLength * timePerUnit;
+    
+    console.log(`模式持续时间: ${duration} ms`);
+    return duration;
   }
 
   /**
-   * 创建模式音符
+   * 创建基于JSON模式的音符
+   * @param {Object} patternNote - JSON模式中的音符定义
+   * @returns {Note} 游戏音符对象
    */
-  createPatternNote(noteData) {
+  createPatternNote(patternNote) {
+    // 创建Note对象
     const note = GameGlobal.databus.pool.getItemByClass('note', Note);
+    // 传递正确的参数：轨道索引和预期命中时间
+    note.init(patternNote.track, patternNote.timing);
     
-    if (note) {
-      // 计算预期命中时间（基于当前时间和下落时间）
-      const fallTime = this.calculateFallTime();
-      const hitTime = Date.now() + fallTime;
-      
-      note.init(noteData.track, hitTime);
-      
-      // 设置音符类型和强度
-      if (noteData.type === 'strong') {
-        note.isStrongNote = true;
-      } else if (noteData.type === 'weak') {
-        note.isWeakNote = true;
-      }
-      
-      if (noteData.velocity) {
-        note.velocity = noteData.velocity;
-      }
-      
-      GameGlobal.databus.notes.push(note);
-    }
-  }
-
-  /**
-   * 重置模式生成状态
-   */
-  resetPatternGeneration(notes) {
-    notes.forEach(note => {
-      note.generated = false;
-    });
-    this.patternStartTime = Date.now();
-  }
-
-  /**
-   * 生成4分音符节拍
-   */
-  generateQuarterBeats(now) {
-    // 检查是否到了生成新节拍的时间
-    if (now - this.lastBeatTime >= this.beatInterval) {
-      this.createNote();
-      this.lastBeatTime = now;
-      this.beatCounter++;
-      
-      // 每16个节拍增加难度（仅在非强制模式下）
-      if (this.beatCounter % 16 === 0 && !this.forcedRhythmType) {
-        GameGlobal.databus.increaseBPM();
-        this.updateBPM(GameGlobal.databus.bpm);
-        this.switchPattern();
-      }
-      
-      // 根据节拍数决定是否启用16分音符（仅在非强制模式下）
-      if (this.beatCounter >= 32 && !this.use16thNotes && !this.forcedRhythmType) {
-        this.enable16thNotes();
-      }
-    }
-  }
-
-  /**
-   * 生成8分音符节拍
-   */
-  generateEighthBeats(now) {
-    // 检查是否到了生成8分音符的时间
-    if (now - this.lastBeatTime >= this.eighthInterval) {
-      this.create8thNote();
-      this.lastBeatTime = now;
-      this.beatCounter++;
-      
-      // 每32个8分音符增加难度
-      if (this.beatCounter % 32 === 0 && !this.forcedRhythmType) {
-        GameGlobal.databus.increaseBPM();
-        this.updateBPM(GameGlobal.databus.bpm);
-        this.switch8thPattern();
-        this.increaseEighthDensity();
-      }
-    }
-  }
-
-  /**
-   * 生成混合模式节拍
-   */
-  generateMixedBeats(now) {
-    // 混合模式中动态切换节奏类型
-    this.mixedModeTimer++;
-    if (this.mixedModeTimer >= this.mixedSwitchInterval) {
-      this.switchMixedType();
-      this.mixedModeTimer = 0;
+    console.log(`创建音符: 轨道${patternNote.track}, 时间${patternNote.timing}, 类型${patternNote.type}`);
+    
+    // 根据音符类型设置属性
+    if (patternNote.type === 'strong') {
+      note.isStrongNote = true;
+      note.velocity = patternNote.velocity || 1.0;
+    } else if (patternNote.type === 'weak') {
+      note.isWeakNote = true;
+      note.velocity = patternNote.velocity || 0.7;
     }
     
-    // 根据当前混合类型生成节拍
-    switch (this.currentMixedType) {
-      case 'quarter':
-        this.generateQuarterBeats(now);
-        break;
-      case 'eighth':
-        this.generateEighthBeats(now);
-        break;
-      case 'sixteenth':
-        this.generate16thBeats(now);
-        break;
-    }
-  }
-  generate16thBeats(now) {
-    // 检查是否到了生成新16分音符的时间
-    if (now - this.lastBeatTime >= this.sixteenthInterval) {
-      this.create16thNote();
-      this.lastBeatTime = now;
-      this.sixteenthCounter++;
-      
-      // 每64个16分音符（16个4分音符）增加难度
-      if (this.sixteenthCounter % 64 === 0) {
-        GameGlobal.databus.increaseBPM();
-        this.updateBPM(GameGlobal.databus.bpm);
-        this.switch16thPattern();
-        this.increaseDensity();
-      }
-    }
+    // 设置8分音符和16分音符属性（根据需要可以扩展）
+    // 这里暂时保持默认值false
+    
+    // 将note添加到databus的notes数组中，以便渲染和更新
+    GameGlobal.databus.notes.push(note);
+    
+    return note;
   }
 
   /**
-   * 创建一个节拍音符
-   */
-  createNote() {
-    const track = this.getNextTrack();
-    const note = GameGlobal.databus.pool.getItemByClass('note', Note);
-    
-    if (note) {
-      // 计算预期命中时间（基于当前时间和下落时间）
-      const fallTime = this.calculateFallTime();
-      const hitTime = Date.now() + fallTime;
-      
-      note.init(track, hitTime);
-      GameGlobal.databus.notes.push(note);
-    }
-  }
-
-  /**
-   * 创建16分音符
-   */
-  create16thNote() {
-    const track = this.get16thTrack();
-    
-    // -1 表示休止符，不生成音符
-    if (track === -1) {
-      return;
-    }
-    
-    const note = GameGlobal.databus.pool.getItemByClass('note', Note);
-    
-    if (note) {
-      // 计算预期命中时间（基于当前时间和下落时间）
-      const fallTime = this.calculateFallTime();
-      const hitTime = Date.now() + fallTime;
-      
-      note.init(track, hitTime);
-      // 16分音符可以标记为不同类型（可选）
-      note.is16thNote = true;
-      GameGlobal.databus.notes.push(note);
-    }
-  }
-
-  /**
-   * 获取下一个轨道（基于当前模式）
-   */
-  getNextTrack() {
-    const pattern = this.patterns[this.currentPatternIndex];
-    const track = pattern[this.patternPosition % pattern.length];
-    this.patternPosition++;
-    return track;
-  }
-
-  /**
-   * 获取16分音符轨道
-   */
-  get16thTrack() {
-    // 根据密度决定是否生成音符
-    if (Math.random() > this.sixteenthDensity) {
-      return -1; // 休止符
-    }
-    
-    const pattern = this.sixteenthPatterns[this.currentPatternIndex % this.sixteenthPatterns.length];
-    const track = pattern[this.patternPosition % pattern.length];
-    this.patternPosition++;
-    return track;
-  }
-
-  /**
-   * 计算音符下落时间（从顶部到判定线）
+   * 计算音符下落时间
+   * @returns {number} 下落时间(毫秒)
    */
   calculateFallTime() {
-    // 基于游戏参数计算，这里使用固定值
-    // 实际应该根据屏幕高度和音符速度计算
-    const screenHeight = wx.getSystemInfoSync().screenHeight;
-    const judgeZoneY = screenHeight - 160 - 10;
-    const noteSpeed = 4; // 像素/帧
-    const fps = 60; // 假设60FPS
-    
-    return (judgeZoneY / noteSpeed / fps) * 1000; // 转换为毫秒
+    // 返回一个固定的下落时间，确保音符能从顶部下落到判定线
+    // 这个值应该与Note类中的速度和屏幕高度相匹配
+    return 2000; // 2秒
   }
 
   /**
-   * 切换到下一个模式
-   */
-  switchPattern() {
-    // 根据当前难度选择模式
-    const difficulty = Math.min(Math.floor(this.beatCounter / 32), 2);
-    const startIndex = difficulty * 3;
-    const endIndex = startIndex + 3;
-    
-    this.currentPatternIndex = startIndex + Math.floor(Math.random() * 3);
-    this.patternPosition = 0;
-    
-    console.log(`切换到模式 ${this.currentPatternIndex}, 难度: ${difficulty}`);
-  }
-
-  /**
-   * 创建8分音符
-   */
-  create8thNote() {
-    const track = this.get8thTrack();
-    
-    // -1 表示休止符，不生成音符
-    if (track === -1) {
-      return;
-    }
-    
-    const note = GameGlobal.databus.pool.getItemByClass('note', Note);
-    
-    if (note) {
-      // 计算预期命中时间（基于当前时间和下落时间）
-      const fallTime = this.calculateFallTime();
-      const hitTime = Date.now() + fallTime;
-      
-      note.init(track, hitTime);
-      // 8分音符标记
-      note.is8thNote = true;
-      GameGlobal.databus.notes.push(note);
-    }
-  }
-
-  /**
-   * 获取8分音符轨道
-   */
-  get8thTrack() {
-    // 根据密度决定是否生成音符
-    if (Math.random() > this.eighthDensity) {
-      return -1; // 休止符
-    }
-    
-    const pattern = this.eighthPatterns[this.currentPatternIndex % this.eighthPatterns.length];
-    const track = pattern[this.patternPosition % pattern.length];
-    this.patternPosition++;
-    return track;
-  }
-
-  /**
-   * 生成8分音符节拍
-   */
-  generateEighthBeats(now) {
-    // 检查是否到了生成8分音符的时间
-    if (now - this.lastBeatTime >= this.eighthInterval) {
-      this.create8thNote();
-      this.lastBeatTime = now;
-      this.beatCounter++;
-      
-      // 每32个8分音符增加难度
-      if (this.beatCounter % 32 === 0) {
-        GameGlobal.databus.increaseBPM();
-        this.updateBPM(GameGlobal.databus.bpm);
-        this.switch8thPattern();
-        this.increaseEighthDensity();
-      }
-    }
-  }
-
-  /**
-   * 生成混合模式节拍
-   */
-  generateMixedBeats(now) {
-    // 混合模式中动态切换节奏类型
-    this.mixedModeTimer++;
-    if (this.mixedModeTimer >= this.mixedSwitchInterval) {
-      this.switchMixedType();
-      this.mixedModeTimer = 0;
-    }
-    
-    // 根据当前混合类型生成节拍
-    switch (this.currentMixedType) {
-      case 'quarter':
-        this.generateQuarterBeats(now);
-        break;
-      case 'eighth':
-        this.generateEighthBeats(now);
-        break;
-      case 'sixteenth':
-        this.generate16thBeats(now);
-        break;
-    }
-  }
-
-  /**
-   * 切换8分音符模式
-   */
-  switch8thPattern() {
-    // 根据8分音符计数器选择模式
-    const patternCount = this.eighthPatterns.length;
-    const progressIndex = Math.floor(this.beatCounter / 64) % patternCount;
-    
-    this.currentPatternIndex = progressIndex;
-    this.patternPosition = 0;
-    
-    console.log(`切换8分音符模式 ${this.currentPatternIndex}`);
-  }
-
-  /**
-   * 切换混合模式中的节奏类型
-   */
-  switchMixedType() {
-    const types = ['quarter', 'eighth', 'sixteenth'];
-    const currentIndex = types.indexOf(this.currentMixedType);
-    const nextIndex = (currentIndex + 1) % types.length;
-    this.currentMixedType = types[nextIndex];
-    
-    // 重置模式状态
-    this.patternPosition = 0;
-    this.currentPatternIndex = 0;
-    
-    console.log(`混合模式切换到: ${this.currentMixedType}`);
-  }
-
-  /**
-   * 增加8分音符密度
-   */
-  increaseEighthDensity() {
-    this.eighthDensity = Math.min(this.eighthDensity + 0.1, 0.9);
-    console.log(`8分音符密度增加到: ${this.eighthDensity.toFixed(1)}`);
-  }
-
-  /**
-   * 切换8分音符模式
-   */
-  switch8thPattern() {
-    // 根据8分音符计数器选择模式
-    const patternCount = this.eighthPatterns.length;
-    const progressIndex = Math.floor(this.beatCounter / 64) % patternCount;
-    
-    this.currentPatternIndex = progressIndex;
-    this.patternPosition = 0;
-    
-    console.log(`切换8分音符模式 ${this.currentPatternIndex}`);
-  }
-
-  /**
-   * 切换混合模式中的节奏类型
-   */
-  switchMixedType() {
-    const types = ['quarter', 'eighth', 'sixteenth'];
-    const currentIndex = types.indexOf(this.currentMixedType);
-    const nextIndex = (currentIndex + 1) % types.length;
-    this.currentMixedType = types[nextIndex];
-    
-    // 重置模式状态
-    this.patternPosition = 0;
-    this.currentPatternIndex = 0;
-    
-    console.log(`混合模式切换到: ${this.currentMixedType}`);
-  }
-
-  /**
-   * 增加8分音符密度
-   */
-  increaseEighthDensity() {
-    this.eighthDensity = Math.min(this.eighthDensity + 0.1, 0.9);
-    console.log(`8分音符密度增加到: ${this.eighthDensity.toFixed(1)}`);
-  }
-  switch16thPattern() {
-    // 根据16分音符计数器选择模式
-    const patternCount = this.sixteenthPatterns.length;
-    const progressIndex = Math.floor(this.sixteenthCounter / 128) % patternCount;
-    
-    this.currentPatternIndex = progressIndex;
-    this.patternPosition = 0;
-    
-    console.log(`切换16分音符模式 ${this.currentPatternIndex}`);
-  }
-
-  /**
-   * 启用16分音符模式
-   */
-  enable16thNotes() {
-    this.use16thNotes = true;
-    this.sixteenthCounter = 0;
-    this.currentPatternIndex = 0;
-    this.patternPosition = 0;
-    console.log('启用16分音符模式');
-  }
-
-  /**
-   * 禁用16分音符模式
-   */
-  disable16thNotes() {
-    this.use16thNotes = false;
-    this.sixteenthCounter = 0;
-    // 重置到原来的模式选择逻辑
-    const difficulty = Math.min(Math.floor(this.beatCounter / 32), 2);
-    this.currentPatternIndex = difficulty * 3;
-    this.patternPosition = 0;
-    console.log('禁用16分音符模式');
-  }
-
-  /**
-   * 增加16分音符密度
-   */
-  increaseDensity() {
-    this.sixteenthDensity = Math.min(this.sixteenthDensity + 0.1, 0.8);
-    console.log(`16分音符密度增加到: ${this.sixteenthDensity.toFixed(1)}`);
-  }
-
-  /**
-   * 生成随机轨道
-   */
-  getRandomTrack() {
-    return Math.floor(Math.random() * 4);
-  }
-
-  /**
-   * 重置生成器
+   * 重置节拍生成器
    */
   reset() {
-    this.lastBeatTime = 0;
-    this.beatCounter = 0;
-    this.sixteenthCounter = 0;
-    this.currentPatternIndex = 0;
-    this.patternPosition = 0;
-    this.use16thNotes = false;
-    this.use8thNotes = false;
-    this.sixteenthDensity = 0.3;
-    this.eighthDensity = 0.5;
-    this.mixedModeTimer = 0;
-    this.currentMixedType = 'quarter';
-    
-    // 重置新模式相关状态
-    this.patternStartTime = Date.now();
+    this.patternStartTime = 0;
     this.lastPatternTime = 0;
+    this.currentNotes = [];
     
-    // 保留强制设置的节奏类型
-    if (this.forcedRhythmType) {
-      this.setRhythmType(this.forcedRhythmType);
-    } else {
-      this.updateBPM(GameGlobal.databus.bpm); // 重置为BPM
-    }
-  }
-
-  /**
-   * 预生成节拍序列（用于复杂模式）
-   * @param {number} count - 要生成的节拍数量
-   */
-  preGenerateBeats(count) {
-    const beats = [];
-    const interval = this.use16thNotes ? this.sixteenthInterval : this.beatInterval;
-    
-    for (let i = 0; i < count; i++) {
-      let track;
-      if (this.use16thNotes) {
-        track = this.get16thTrack();
-      } else {
-        track = this.getNextTrack();
-      }
-      
-      if (track !== -1) { // 只添加非休止符
-        beats.push({
-          track: track,
-          timing: i * interval,
-          is16thNote: this.use16thNotes
-        });
-      }
-    }
-    return beats;
+    // 重新加载模式数据
+    this.loadPatternData();
   }
 
   /**
    * 获取当前模式信息
+   * @returns {Object} 当前模式信息
    */
   getCurrentPatternInfo() {
-    const baseInfo = {
-      rhythmType: this.rhythmType,
-      bpm: GameGlobal.databus.bpm,
-      beatCount: this.beatCounter,
-      interval: this.beatInterval
-    };
-    
-    if (this.rhythmType === 'mixed') {
+    if (this.patternLoader.isDataLoaded() && this.patternLoader.getCurrentPattern()) {
+      const pattern = this.patternLoader.getCurrentPattern();
       return {
-        ...baseInfo,
-        mode: '混合模式',
-        currentMixedType: this.currentMixedType,
-        mixedTimer: this.mixedModeTimer
+        name: pattern.name,
+        bpm: pattern.bpm,
+        difficulty: pattern.difficulty
       };
-    } else if (this.use16thNotes) {
-      return {
-        ...baseInfo,
-        mode: '16分音符',
-        density: this.sixteenthDensity,
-        sixteenthCount: this.sixteenthCounter
-      };
-    } else if (this.use8thNotes) {
-      return {
-        ...baseInfo,
-        mode: '8分音符',
-        density: this.eighthDensity
-      };
-    } else {
-      const difficulty = Math.min(Math.floor(this.beatCounter / 32), 2);
-      const patternNames = ['简单', '中等', '复杂'];
-      
-      return {
-        ...baseInfo,
-        mode: '4分音符',
-        difficulty,
-        difficultyName: patternNames[difficulty]
-      };
+    }
+    return null;
+  }
+
+  /**
+   * 设置第一个可用的节奏模式作为默认模式
+   */
+  setFirstAvailablePattern() {
+    const availablePatterns = this.getAvailablePatterns();
+    if (availablePatterns && availablePatterns.length > 0) {
+      const firstPatternId = availablePatterns[0].id;
+      this.setRhythmPattern(firstPatternId);
+      console.log(`已自动选择默认节奏模式: ${firstPatternId}`);
     }
   }
 
   /**
-   * 手动切捰16分音符模式（供调试使用）
+   * 检查是否已加载数据
+   * @returns {boolean} 是否已加载
    */
-  toggle16thNotes() {
-    if (this.use16thNotes) {
-      this.disable16thNotes();
-    } else {
-      this.enable16thNotes();
-    }
-  }
-
-  /**
-   * 设在16分音符密度
-   * @param {number} density - 密度值 (0-1)
-   */
-  setSixteenthDensity(density) {
-    this.sixteenthDensity = Math.max(0, Math.min(1, density));
-    console.log(`设在16分音符密度为: ${this.sixteenthDensity.toFixed(1)}`);
-  }
-
-  /**
-   * 设在8分音符密度
-   * @param {number} density - 密度值 (0-1)
-   */
-  setEighthDensity(density) {
-    this.eighthDensity = Math.max(0, Math.min(1, density));
-    console.log(`设在8分音符密度为: ${this.eighthDensity.toFixed(1)}`);
-  }
-
-  /**
-   * 获取当前节奏类型
-   */
-  getCurrentRhythmType() {
-    return this.rhythmType;
+  isDataLoaded() {
+    return this.patternLoader.isDataLoaded();
   }
 }
+
