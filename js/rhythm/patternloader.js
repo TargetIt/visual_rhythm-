@@ -199,9 +199,20 @@ export default class PatternLoader {
       return null;
     }
 
-    // 从原始数据中获取可视化配置
-    const rawData = require('../../rhythm-patterns.json');
-    return rawData.visualization || null;
+    try {
+      // 在小程序环境中使用require加载JSON文件
+      if (typeof wx !== 'undefined') {
+        const rawData = require('/rhythm-patterns.json');
+        return rawData.visualization || null;
+      } else {
+        // 在浏览器环境中也使用require
+        const rawData = require('../../rhythm-patterns.json');
+        return rawData.visualization || null;
+      }
+    } catch (error) {
+      console.error('加载可视化配置失败:', error);
+      return null;
+    }
   }
 
   /**

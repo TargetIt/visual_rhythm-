@@ -24,26 +24,31 @@ export default class BeatGenerator {
     try {
       // 在小程序环境中，需要动态加载JSON文件
       if (typeof wx !== 'undefined') {
-        wx.request({
-          url: '../../rhythm-patterns.json',
-          method: 'GET',
-          success: (res) => {
-            if (res.statusCode === 200 && res.data) {
-              this.patternLoader.loadPatterns(res.data);
-              console.log('节奏模式数据加载成功');
-            } else {
-              console.error('加载节奏模式数据失败:', res);
-              this.loadDefaultPatterns();
-            }
-          },
-          fail: (err) => {
-            console.error('请求节奏模式数据失败:', err);
-            this.loadDefaultPatterns();
-          }
-        });
+        // 使用微信小程序的文件系统读取本地JSON文件
+        const fs = wx.getFileSystemManager();
+        try {
+          const data = fs.readFileSync('rhythm-patterns.json', 'utf8');
+          const patternData = JSON.parse(data);
+          this.patternLoader.loadPatterns(patternData);
+          console.log('节奏模式数据加载成功');
+          // 尝试设置第一个可用模式为默认模式
+          this.setFirstAvailablePattern();
+        } catch (readErr) {
+          console.error('读取节奏模式数据失败:', readErr);
+          this.loadDefaultPatterns();
+        }
       } else {
-        // 在浏览器环境中，使用默认数据
-        this.loadDefaultPatterns();
+        // 在浏览器环境中，使用require加载JSON文件
+        try {
+          const patternData = require('../../rhythm-patterns.json');
+          this.patternLoader.loadPatterns(patternData);
+          console.log('节奏模式数据加载成功');
+          // 尝试设置第一个可用模式为默认模式
+          this.setFirstAvailablePattern();
+        } catch (err) {
+          console.error('加载节奏模式数据失败:', err);
+          this.loadDefaultPatterns();
+        }
       }
     } catch (error) {
       console.error('加载节奏模式数据时出错:', error);
@@ -211,91 +216,87 @@ export default class BeatGenerator {
   }
 
   /**
-   * 计算节奏模式的持续时间
+   * 计算模式持续时间
+   * @param {Object} pattern - 节奏模式
+   * @returns {number} 持续时间(毫秒)
    */
   calculatePatternDuration(pattern) {
-    // 基于BPM和时间签名计算模式持续时间
-    const bpm = pattern.bpm || 120;
-    const timeSignature = pattern.timeSignature || "4/4";
-    const [beatsPerMeasure, noteValue] = timeSignature.split('/').map(Number);
-    
-    // 计算一个小节的持续时间（毫秒）
-    const beatDuration = (60 / bpm) * 1000;
-    const measureDuration = beatDuration * beatsPerMeasure;
-    
-    return measureDuration;
+    // 假设每个模式都是1小节4/4拍
+    // 可以根据实际的模式数据进行更精确的计算
+    return (60 / pattern.bpm) * 4 * 1000; // 4拍的毫秒数
   }
 
   /**
-   * 创建模式音符
+   * 创建基于JSON模式的音符
+   * @param {Object} patternNote - JSON模式中的音符定义
+   * @returns {Note} 游戏音符对象
    */
-  createPatternNote(noteData) {
-    const note = GameGlobal.databus.pool.getItemByClass('note', Note);
+  createPatternNote(patternNote) {
+    // 计算音符的下落时间
+    const fallTime = this.calculateFallTime();
     
-    if (note) {
-      // 计算预期命中时间（基于当前时间和下落时间）
-      const fallTime = this.calculateFallTime();
-      const hitTime = Date.now() + fallTime;
-      
-      note.init(noteData.track, hitTime);
-      
-      // 设置音符类型和强度
-      if (noteData.type === 'strong') {
-        note.isStrongNote = true;
-      } else if (noteData.type === 'weak') {
-        note.isWeakNote = true;
-      }
-      
-      if (noteData.velocity) {
-        note.velocity = noteData.velocity;
-      }
-      
-      GameGlobal.databus.notes.push(note);
-    }
+    // 创建Note对象
+    const note = GameGlobal.databus.pool.getItemByClass('note', Note);
+    note.init(patternNote.track, fallTime, patternNote.type);
+    
+    return note;
   }
 
   /**
-   * 计算音符下落时间（从顶部到判定线）
+   * 计算音符下落时间
+   * @returns {number} 下落时间(毫秒)
    */
   calculateFallTime() {
-    // 基于游戏参数计算，这里使用固定值
-    // 实际应该根据屏幕高度和音符速度计算
-    const screenHeight = wx.getSystemInfoSync().screenHeight;
-    const judgeZoneY = screenHeight - 160 - 10;
-    const noteSpeed = 4; // 像素/帧
-    const fps = 60; // 假设60FPS
-    
-    return (judgeZoneY / noteSpeed / fps) * 1000; // 转换为毫秒
+    // 假设音符从顶部到底部需要的时间是固定的
+    // 这里可以根据需要调整
+    return 2000; // 2秒
   }
 
   /**
-   * 重置生成器
+   * 重置节拍生成器
    */
   reset() {
     this.patternStartTime = 0;
     this.lastPatternTime = 0;
     this.currentNotes = [];
-    console.log('节拍生成器已重置');
+    
+    // 重新加载模式数据
+    this.loadPatternData();
   }
 
   /**
    * 获取当前模式信息
+   * @returns {Object} 当前模式信息
    */
   getCurrentPatternInfo() {
-    const pattern = this.patternLoader.getCurrentPattern();
-    if (!pattern) {
+    if (this.patternLoader.isDataLoaded() && this.patternLoader.getCurrentPattern()) {
+      const pattern = this.patternLoader.getCurrentPattern();
       return {
-        mode: '未选择',
-        bpm: this.bpm
+        name: pattern.name,
+        bpm: pattern.bpm,
+        difficulty: pattern.difficulty
       };
     }
-    
-    return {
-      mode: pattern.name,
-      bpm: this.bpm,
-      difficulty: pattern.difficulty,
-      timeSignature: pattern.timeSignature,
-      description: pattern.description
-    };
+    return null;
+  }
+
+  /**
+   * 设置第一个可用的节奏模式作为默认模式
+   */
+  setFirstAvailablePattern() {
+    const availablePatterns = this.getAvailablePatterns();
+    if (availablePatterns && availablePatterns.length > 0) {
+      const firstPatternId = availablePatterns[0].id;
+      this.setRhythmPattern(firstPatternId);
+      console.log(`已自动选择默认节奏模式: ${firstPatternId}`);
+    }
+  }
+
+  /**
+   * 检查是否已加载数据
+   * @returns {boolean} 是否已加载
+   */
+  isDataLoaded() {
+    return this.patternLoader.isDataLoaded();
   }
 }

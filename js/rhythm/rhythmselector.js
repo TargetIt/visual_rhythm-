@@ -6,7 +6,7 @@ import PatternLoader from './patternloader';
 export default class RhythmSelector {
   constructor() {
     this.isVisible = true;
-    this.selectedRhythmType = '基础4拍节奏'; // 默认选择
+    this.selectedRhythmType = ''; // 不再设置默认选择
     this.selectedBPM = 120; // 默认BPM
     this.bpmInput = 120; // 用户输入的BPM
     
@@ -70,72 +70,39 @@ export default class RhythmSelector {
     try {
       // 在小程序环境中，需要动态加载JSON文件
       if (typeof wx !== 'undefined') {
-        wx.request({
-          url: '../../rhythm-patterns.json',
-          method: 'GET',
-          success: (res) => {
-            if (res.statusCode === 200 && res.data) {
-              this.patternLoader.loadPatterns(res.data);
-              this.rhythmPatterns = this.patternLoader.getAvailablePatterns();
-              console.log('节奏模式数据加载成功', this.rhythmPatterns);
-            } else {
-              console.error('加载节奏模式数据失败:', res);
-              this.loadDefaultPatterns();
-            }
-          },
-          fail: (err) => {
-            console.error('请求节奏模式数据失败:', err);
-            this.loadDefaultPatterns();
+        // 使用微信小程序的文件系统读取本地JSON文件
+        const fs = wx.getFileSystemManager();
+        try {
+          const data = fs.readFileSync('rhythm-patterns.json', 'utf8');
+          const patternData = JSON.parse(data);
+          this.patternLoader.loadPatterns(patternData);
+          this.rhythmPatterns = this.patternLoader.getAvailablePatterns();
+          console.log('节奏模式数据加载成功', this.rhythmPatterns);
+          // 默认选择第一个模式
+          if (this.rhythmPatterns.length > 0 && !this.selectedPatternId) {
+            this.selectRhythmType(0);
           }
-        });
+        } catch (readErr) {
+          console.error('读取节奏模式数据失败:', readErr);
+        }
       } else {
-        // 在浏览器环境中，使用默认数据
-        this.loadDefaultPatterns();
+        // 在浏览器环境中，使用require加载JSON文件
+        try {
+          const patternData = require('../../rhythm-patterns.json');
+          this.patternLoader.loadPatterns(patternData);
+          this.rhythmPatterns = this.patternLoader.getAvailablePatterns();
+          console.log('节奏模式数据加载成功', this.rhythmPatterns);
+          // 默认选择第一个模式
+          if (this.rhythmPatterns.length > 0 && !this.selectedPatternId) {
+            this.selectRhythmType(0);
+          }
+        } catch (err) {
+          console.error('加载节奏模式数据失败:', err);
+        }
       }
     } catch (error) {
       console.error('加载节奏模式数据时出错:', error);
-      this.loadDefaultPatterns();
     }
-  }
-
-  /**
-   * 加载默认节奏模式
-   */
-  loadDefaultPatterns() {
-    const defaultPatterns = {
-      rhythmLibrary: {
-        basic: {
-          name: "基础4拍节奏",
-          difficulty: "easy",
-          bpm: 120,
-          timeSignature: "4/4",
-          tracks: {
-            0: "X---X---X---X---",
-            1: "----X---X---X---", 
-            2: "--------X---X---",
-            3: "------------X---"
-          },
-          description: "简单的四分音符，每个轨道错开一拍"
-        },
-        eighth: {
-          name: "8分音符节奏",
-          difficulty: "medium", 
-          bpm: 140,
-          timeSignature: "4/4",
-          tracks: {
-            0: "X-X-X-X-X-X-X-X-",
-            1: "-X-X-X-X-X-X-X-X",
-            2: "X---X---X---X---",
-            3: "----X---X---X---"
-          },
-          description: "8分音符和4分音符混合"
-        }
-      }
-    };
-
-    this.patternLoader.loadPatterns(defaultPatterns);
-    this.rhythmPatterns = this.patternLoader.getAvailablePatterns();
-    console.log('使用默认节奏模式数据');
   }
 
   /**
@@ -373,8 +340,10 @@ export default class RhythmSelector {
         this.selectedBPM = pattern.bpm;
       }
       
+      // 关闭下拉菜单
       this.closeDropdown();
-      console.log(`选择节奏模式: ${pattern.name} (BPM: ${pattern.bpm})`);
+    } else {
+      console.warn('尝试选择无效的节奏类型索引:', index);
     }
   }
 
@@ -581,34 +550,34 @@ export default class RhythmSelector {
    * 开始游戏
    */
   startGame() {
+    // 如果没有选择节奏模式，则尝试选择第一个可用的模式
     if (!this.selectedPatternId) {
-      console.error('未选择节奏模式');
-      return;
-    }
-    
-    const pattern = this.rhythmPatterns[this.selectedIndex];
-    const config = {
-      mode: 'pattern',
-      patternId: this.selectedPatternId,
-      rhythmName: pattern.name,
-      bpm: this.selectedBPM,
-      difficulty: pattern.difficulty,
-      timeSignature: pattern.timeSignature
-    };
-    
-    if (this.displayMode === 'initial') {
-      // 初始模式：开始新游戏
-      if (this.onStartGame) {
-        this.onStartGame(config);
-      }
-    } else if (this.displayMode === 'in-game') {
-      // 游戏内模式：重启游戏
-      if (this.onGameRestart) {
-        this.onGameRestart(config);
+      if (this.rhythmPatterns.length > 0) {
+        console.log('未选择节奏模式，自动选择第一个模式');
+        this.selectRhythmType(0);
+      } else {
+        console.warn('没有可用的节奏模式');
+        return;
       }
     }
     
-    this.hide();
+    // 确保BPM在有效范围内
+    this.selectedBPM = Math.max(40, Math.min(200, this.selectedBPM));
+    this.bpmInput = this.selectedBPM;
+    
+    // 隐藏选择器
+    this.isVisible = false;
+    
+    // 调用回调函数
+    if (this.onStartGame) {
+      this.onStartGame({
+        patternId: this.selectedPatternId,
+        bpm: this.selectedBPM,
+        rhythmType: this.selectedRhythmType
+      });
+    } else {
+      console.warn('未设置开始游戏的回调函数');
+    }
   }
 
   /**
