@@ -124,7 +124,7 @@ export default class Player extends Animation {
   shoot() {
     const bullet = GameGlobal.databus.pool.getItemByClass('bullet', Bullet);
     bullet.init(this.x + this.width / 2 - bullet.width / 2, this.y - 10, 10);
-    GameGlobal.databus.bullets.push(bullet);
+    GameGlobal.databus.notes.push(bullet);
     GameGlobal.musicManager.playShoot(); // 播放射击音效
   }
 
