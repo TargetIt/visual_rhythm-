@@ -126,8 +126,10 @@ export default class Music {
   initWebAudio() {
     try {
       // 检查是否支持Web Audio API
-      if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {
-        this.audioContext = new (AudioContext || webkitAudioContext)();
+      const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext
+        : typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null;
+      if (AudioCtx) {
+        this.audioContext = new AudioCtx();
         this.masterGain = this.audioContext.createGain();
         this.masterGain.connect(this.audioContext.destination);
         
