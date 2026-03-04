@@ -74,8 +74,9 @@ export default class DataBus {
    * @param {Object} note - 要回收的节奏点对象
    */
   removeNote(note) {
-    const temp = this.notes.splice(this.notes.indexOf(note), 1);
-    if (temp) {
+    const index = this.notes.indexOf(note);
+    if (index !== -1) {
+      this.notes.splice(index, 1);
       this.pool.recover('note', note); // 回收节奏点到对象池
     }
   }
