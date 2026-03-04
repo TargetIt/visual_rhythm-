@@ -40,7 +40,6 @@ export default class Bullet extends Sprite {
   remove() {
     this.isActive = false;
     this.visible = false;
-    // 回收子弹对象
-    GameGlobal.databus.removeBullets(this);
+    GameGlobal.databus.removeNote(this);
   }
 }

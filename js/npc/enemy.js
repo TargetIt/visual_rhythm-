@@ -60,12 +60,12 @@ export default class Enemy extends Animation {
     wx.vibrateShort({
       type: 'light'
     }); // 轻微震动
-    this.on('stopAnimation', () => this.remove.bind(this));
+    this.on('stopAnimation', () => this.remove());
   }
 
   remove() {
     this.isActive = false;
     this.visible = false;
-    GameGlobal.databus.removeEnemy(this);
+    GameGlobal.databus.removeNote(this);
   }
 }

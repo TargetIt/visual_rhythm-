@@ -171,9 +171,6 @@ export default class BeatGenerator {
   generateBeats() {
     const now = Date.now();
     
-    // 添加调试信息
-    console.log(`[BeatGenerator] 开始生成节拍 - 当前时间: ${now}, 数据已加载: ${this.patternLoader.isDataLoaded()}, 当前模式:`, this.patternLoader.getCurrentPattern()?.name);
-    
     // 只使用JSON节奏模式
     if (this.patternLoader.isDataLoaded() && this.patternLoader.getCurrentPattern()) {
       this.generatePatternBeats(now);
@@ -198,8 +195,6 @@ export default class BeatGenerator {
       this.currentNotes = this.patternLoader.getCurrentPatternNotes();
       // 标记所有音符未生成
       this.currentNotes.forEach(note => note.generated = false);
-      console.log('初始化音符序列:', this.currentNotes);
-      console.debug(`[BeatGenerator] 模式 "${pattern.name}" 初始化 - 开始时间: ${this.patternStartTime}`);
     }
 
     // 计算当前时间在模式中的位置
@@ -207,15 +202,11 @@ export default class BeatGenerator {
     const elapsedTime = now - this.patternStartTime;
     const currentTimeInPattern = elapsedTime % patternDuration;
 
-    // 添加详细的时间信息
-    console.debug(`[BeatGenerator] 时间计算 - 已耗时: ${elapsedTime}ms, 模式内时间: ${currentTimeInPattern}ms, 模式总长: ${patternDuration}ms`);
-
     // 检查是否需要重置循环
     if (currentTimeInPattern < this.lastPatternTime) {
       // 新的一轮循环开始
       this.patternStartTime = now - currentTimeInPattern;
       this.currentNotes.forEach(note => note.generated = false);
-      console.log(`[BeatGenerator] 开始新的循环 - 模式: ${pattern.name}, BPM: ${this.bpm}`);
       this.lastPatternTime = 0; // 重置lastPatternTime以避免比较错误
     }
 
@@ -228,14 +219,9 @@ export default class BeatGenerator {
           this.lastPatternTime <= note.timing) {
         this.createPatternNote(note);
         note.generated = true;
-        console.log(`[BeatGenerator] 生成音符: ID=${note.id}, 轨道${note.track}, 时间${note.timing}ms, 类型=${note.type}, 强度=${note.velocity}`);
         notesGenerated++;
       }
     });
-
-    if (notesGenerated > 0) {
-      console.debug(`[BeatGenerator] 本轮生成了 ${notesGenerated} 个音符`);
-    }
 
     this.lastPatternTime = currentTimeInPattern;
   }
@@ -255,15 +241,11 @@ export default class BeatGenerator {
       }
     }
     
-    console.log(`模式最长轨道长度: ${maxLength}`);
-    
     // 基于BPM和模式长度计算持续时间
     // 假设每个字符代表一个1/4拍（8分音符）
     const timePerBeat = 60 / pattern.bpm * 1000; // 每拍的毫秒数
     const timePerUnit = timePerBeat / 2; // 每个字符的时间（1/4拍 = 1/2 * 1拍）
     const duration = maxLength * timePerUnit;
-    
-    console.log(`模式持续时间: ${duration} ms`);
     return duration;
   }
 
@@ -277,8 +259,6 @@ export default class BeatGenerator {
     const note = GameGlobal.databus.pool.getItemByClass('note', Note);
     // 传递正确的参数：轨道索引和预期命中时间
     note.init(patternNote.track, patternNote.timing);
-    
-    console.log(`创建音符: 轨道${patternNote.track}, 时间${patternNote.timing}, 类型${patternNote.type}`);
     
     // 根据音符类型设置属性
     if (patternNote.type === 'strong') {
@@ -315,9 +295,6 @@ export default class BeatGenerator {
     this.patternStartTime = 0;
     this.lastPatternTime = 0;
     this.currentNotes = [];
-    
-    // 重新加载模式数据
-    this.loadPatternData();
   }
 
   /**

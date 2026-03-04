@@ -3,59 +3,61 @@
 ## 检视范围
 - 核心游戏循环：`js/main.js`
 - 全局状态管理：`js/databus.js`
-- 节拍生成与模式加载：`js/rhythm/beatgenerator.js`
-- 项目结构说明：`README.md`
+- 节拍生成与模式加载：`js/rhythm/beatgenerator.js`、`js/rhythm/patternloader.js`
+- 节奏点：`js/rhythm/note.js`
+- 旧射击游戏模块：`js/npc/enemy.js`、`js/player/bullet.js`、`js/player/index.js`
 
 ## 总体结论
 当前项目已经具备节奏游戏的主干能力（轨道、判定、得分、模式选择、节拍生成）。
-但在**性能、日志噪声、状态一致性**方面存在明显可改进空间，尤其是高频渲染/更新路径中大量 `console.log` 输出，会对真机帧率和调试体验造成直接影响。
+在**性能、日志噪声、状态一致性、残留代码**方面存在明显可改进空间。
 
-## 主要发现
+## 已修复的问题
 
-### 1) 高频路径日志过多，存在性能风险（高优先级）
-- `render()` 每帧打印音符数量。
-- `generateBeats()` / `generatePatternBeats()` 在高频更新路径中有大量日志和 debug 输出。
-- `update()` 中按固定帧间隔输出多条调试日志。
+### 1) 高频路径日志过多，存在性能风险（高优先级）✅ 已修复
+- `main.js render()` 每帧打印音符数量 → 已移除。
+- `main.js update()` 每60帧输出多条调试日志 → 已移除。
+- `beatgenerator.js generateBeats()/generatePatternBeats()` 大量日志和 debug 输出 → 已移除。
+- `note.js render()` 每帧每个音符打印渲染日志 → 已移除。
+- `note.js init()` 打印初始化日志 → 已移除。
+- `patternloader.js parseTrackString()/parseTrackPattern()` 解析时输出大量日志 → 已移除。
+- `beatgenerator.js calculatePatternDuration()` 和 `createPatternNote()` 中重复日志 → 已移除。
 
-**影响**：在小程序环境中，频繁日志会影响主线程，可能导致掉帧、输入反馈延迟。
+### 2) 节拍生成器 `reset()` 会重复加载模式数据（中优先级）✅ 已修复
+`BeatGenerator.reset()` 内部每次都会调用 `loadPatternData()`。
 
-**建议**：
-- 增加统一 `DEBUG` 开关；
-- 高频路径仅保留采样日志或完全关闭；
-- 将关键日志迁移到模式切换、异常分支。
+**修复**：`reset()` 仅清理时间/缓存状态，模式数据仅在构造阶段加载。
 
-### 2) 节拍生成器 `reset()` 会重复加载模式数据（中优先级）
-`BeatGenerator.reset()` 内部每次都会调用 `loadPatternData()`，在频繁重开局场景下会产生重复 I/O 与重复初始化。
+### 3) Enemy.destroy() 回调 bug（高优先级）✅ 已修复
+`enemy.js` 第63行：
+```js
+// 修复前 - 返回一个绑定函数但不执行
+this.on('stopAnimation', () => this.remove.bind(this));
+// 修复后 - 正确调用 remove 方法
+this.on('stopAnimation', () => this.remove());
+```
 
-**影响**：重启成本上升，且存在重复设置默认模式的副作用风险。
+### 4) `wx.vibrateShort` 缺少安全检查（中优先级）✅ 已修复
+`main.js` `checkNoteHit()` 中直接访问 `wx.vibrateShort` 而没有先检查 `wx` 是否存在。
 
-**建议**：
-- 将模式数据加载与游戏状态重置解耦；
-- `reset()` 仅清理时间/缓存状态；
-- 模式数据仅在构造阶段或明确“刷新资源”操作时重载。
+**修复**：添加 `typeof wx !== 'undefined'` 前置检查。
 
-### 3) `DataBus` 单例实现与类字段初始化并存，语义上可读性一般（中优先级）
-当前 `DataBus` 在类字段中直接初始化状态，同时在构造函数中执行单例复用逻辑（`if (instance) return instance`）。虽然可运行，但会给后续维护者造成“初始化时机与复用语义”理解成本。
+### 5) 旧模块引用不存在的 DataBus 方法（中优先级）✅ 已修复
+- `enemy.js` 调用 `GameGlobal.databus.removeEnemy(this)` — 方法不存在 → 改为 `removeNote(this)`
+- `bullet.js` 调用 `GameGlobal.databus.removeBullets(this)` — 方法不存在 → 改为 `removeNote(this)`
+- `player/index.js` 引用 `GameGlobal.databus.bullets` — 属性不存在 → 改为 `notes`
 
-**建议**：
-- 使用显式 `getInstance()` 工厂，或
-- 保留现有方式但在注释中明确“字段初始化 + 构造返回旧实例”的行为边界。
+## 遗留建议（未修改）
 
-### 4) BPM 来源存在双写路径，长期有一致性风险（中优先级）
-- `Main.startGameWithConfig()` 会先设置用户选择 BPM；
+### `DataBus` 单例实现与类字段初始化并存，语义上可读性一般
+当前 `DataBus` 在类字段中直接初始化状态，同时在构造函数中执行单例复用逻辑（`if (instance) return instance`）。虽然可运行，但会给后续维护者造成"初始化时机与复用语义"理解成本。
+
+**建议**：使用显式 `getInstance()` 工厂，或保留现有方式但在注释中明确行为边界。
+
+### BPM 来源存在双写路径，长期有一致性风险
+- `Main.startGameWithConfig()` 设置用户选择 BPM；
 - `BeatGenerator.setRhythmPattern()` 又可能用 pattern 内 BPM 覆盖并同步回 `DataBus`。
 
-**影响**：若配置 BPM 与 pattern BPM 不一致，最终生效值不直观。
-
-**建议**：
-- 明确优先级策略（用户配置优先或谱面配置优先）；
-- 在 UI 和日志中明确展示“最终生效 BPM”。
-
-## 建议优先级执行顺序
-1. 先治理高频日志（性能立竿见影）。
-2. 再调整 `BeatGenerator.reset()` 的职责边界。
-3. 统一 BPM 生效策略，避免维护期歧义。
-4. 最后重构 `DataBus` 单例模式提升可读性。
+**建议**：明确优先级策略（用户配置优先或谱面配置优先），并在 UI 中展示最终生效 BPM。
 
 ## 备注
-本次为静态代码检视，未在微信开发者工具中进行真机帧率采样。
+本次检视已执行代码修复，主要集中在性能优化（移除热路径日志）、回调 bug 修复、安全检查加固以及旧模块残留方法引用修正。

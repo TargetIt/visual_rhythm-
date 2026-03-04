@@ -268,7 +268,7 @@ export default class Main {
       }
       
       // 震动反馈
-      if (hitType !== 'MISS' && typeof wx.vibrateShort === 'function') {
+      if (hitType !== 'MISS' && typeof wx !== 'undefined' && typeof wx.vibrateShort === 'function') {
         wx.vibrateShort({
           type: hitType === 'PERFECT' ? 'medium' : 'light'
         });
@@ -332,9 +332,6 @@ export default class Main {
     }
     
     this.trackSystem.render(ctx); // 绘制轨道系统
-    
-    // 添加调试信息
-    console.log(`渲染阶段 - 音符数量: ${GameGlobal.databus.notes.length}`);
     
     // 绘制所有节奏点
     GameGlobal.databus.notes.forEach((note) => note.render(ctx));
@@ -446,14 +443,7 @@ export default class Main {
     // 更新按键高亮效果
     this.updateKeyHighlights();
     
-    // 添加调试信息
-    if (GameGlobal.databus.frame % 60 === 0) { // 每60帧打印一次
-      console.log(`当前节拍: ${GameGlobal.databus.bpm}`);
-      console.log(`音符数量: ${GameGlobal.databus.notes.length}`);
-      if (GameGlobal.databus.notes.length > 0) {
-        console.log(`第一个音符: 轨道${GameGlobal.databus.notes[0].track}, Y位置${GameGlobal.databus.notes[0].y}`);
-      }
-    }
+
   }
 
   // 实现游戏帧循环

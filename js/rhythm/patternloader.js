@@ -125,7 +125,6 @@ export default class PatternLoader {
     // 按时间排序
     notes.sort((a, b) => a.timing - b.timing);
     
-    console.log('解析得到的音符序列:', notes);
     return notes;
   }
 
@@ -143,8 +142,6 @@ export default class PatternLoader {
     
     // 确保currentPattern已设置
     const bpm = (this.currentPattern && this.currentPattern.bpm) ? this.currentPattern.bpm : 120;
-    console.log(`解析轨道 ${trackIndex}，BPM: ${bpm}`);
-    
     // 计算每个字符代表的时间单位（基于BPM）
     // 每个字符代表一个1/4拍（8分音符）
     const timePerBeat = 60 / bpm * 1000; // 每拍的毫秒数
@@ -174,7 +171,6 @@ export default class PatternLoader {
       // '-' 表示休止符，不生成音符
     }
     
-    console.log(`轨道 ${trackIndex} 生成音符:`, notes);
     return notes;
   }
 
