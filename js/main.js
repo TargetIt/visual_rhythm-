@@ -284,7 +284,8 @@ export default class Main {
   checkMissedNotes() {
     const judgeZone = this.trackSystem.getJudgeZone();
     
-    GameGlobal.databus.notes.forEach(note => {
+    for (let i = GameGlobal.databus.notes.length - 1; i >= 0; i--) {
+      const note = GameGlobal.databus.notes[i];
       if (note.isActive && note.y > judgeZone.y + judgeZone.height + 50) {
         // 超出判定区域，认为MISS
         note.destroy();
@@ -294,7 +295,7 @@ export default class Main {
         }
         console.log('MISS - 节奏点超出判定区域');
       }
-    });
+    }
   }
 
   /**
