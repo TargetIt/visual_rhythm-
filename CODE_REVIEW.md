@@ -59,5 +59,30 @@ this.on('stopAnimation', () => this.remove());
 
 **建议**：明确优先级策略（用户配置优先或谱面配置优先），并在 UI 中展示最终生效 BPM。
 
+## 第二轮检视修复
+
+### 6) `RhythmSelector.startGame()` 在游戏内模式下未调用正确回调（高优先级）✅ 已修复
+`startGame()` 无论在初始模式还是游戏内模式(in-game)，都只调用 `onStartGame` 回调。当 `displayMode === 'in-game'` 时，应该调用 `onGameRestart`，否则"应用设置"按钮的行为与"开始游戏"完全相同，游戏内切换节奏模式功能失效。
+
+**修复**：根据 `displayMode` 选择调用 `onGameRestart` 或 `onStartGame`。
+
+### 7) `Music.initWebAudio()` 存在潜在 ReferenceError（中优先级）✅ 已修复
+```js
+// 修复前 — 当 AudioContext 未定义时，表达式 AudioContext || ... 会抛出 ReferenceError
+this.audioContext = new (AudioContext || webkitAudioContext)();
+// 修复后 — 先安全检测再赋值给局部变量
+const AudioCtx = typeof AudioContext !== 'undefined' ? AudioContext
+  : typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null;
+if (AudioCtx) { this.audioContext = new AudioCtx(); ... }
+```
+
+### 8) `DataBus.increaseBPM()` 最大 BPM 限制与其他模块不一致（低优先级）✅ 已修复
+`increaseBPM()` 中 `bpm < 120` 限制与 `RhythmSelector`（40–200）和 `exitKeyboardInput()`（40–200）中的范围不一致。
+
+**修复**：将上限从 120 改为 200，保持全局一致。
+
+### 9) README.md 文件名拼写错误（低优先级）✅ 已修复
+`animatoin.js` → `animation.js`
+
 ## 备注
-本次检视已执行代码修复，主要集中在性能优化（移除热路径日志）、回调 bug 修复、安全检查加固以及旧模块残留方法引用修正。
+本次检视已执行代码修复，主要集中在性能优化（移除热路径日志）、回调 bug 修复、安全检查加固以及旧模块残留方法引用修正。第二轮检视进一步修复了回调逻辑错误、潜在 ReferenceError、BPM 限制不一致和文档拼写错误。

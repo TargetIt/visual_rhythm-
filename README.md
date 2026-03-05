@@ -9,7 +9,7 @@
 ├── images                                     // 图片资源
 ├── js
 │   ├── base
-│   │   ├── animatoin.js                       // 帧动画的简易实现
+│   │   ├── animation.js                       // 帧动画的简易实现
 │   │   ├── pool.js                            // 对象池的简易实现
 │   │   └── sprite.js                          // 游戏基本元素精灵类
 │   ├── libs

@@ -161,7 +161,7 @@ export default class DataBus {
     this.bpm = bpm;
   }
   increaseBPM() {
-    if (this.bpm < 120) { // 最大BPM限制
+    if (this.bpm < 200) { // 最大BPM限制
       this.bpm += 5;
     }
   }

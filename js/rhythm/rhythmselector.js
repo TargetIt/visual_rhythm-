@@ -568,13 +568,17 @@ export default class RhythmSelector {
     // 隐藏选择器
     this.isVisible = false;
     
-    // 调用回调函数
-    if (this.onStartGame) {
-      this.onStartGame({
-        patternId: this.selectedPatternId,
-        bpm: this.selectedBPM,
-        rhythmType: this.selectedRhythmType
-      });
+    // 根据显示模式调用不同的回调函数
+    const config = {
+      patternId: this.selectedPatternId,
+      bpm: this.selectedBPM,
+      rhythmType: this.selectedRhythmType
+    };
+    
+    if (this.displayMode === 'in-game' && this.onGameRestart) {
+      this.onGameRestart(config);
+    } else if (this.onStartGame) {
+      this.onStartGame(config);
     } else {
       console.warn('未设置开始游戏的回调函数');
     }
