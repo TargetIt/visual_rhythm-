@@ -36,6 +36,8 @@ export default class Note extends Sprite {
     this.hitTime = hitTime;
     this.isActive = true;
     
+    console.log(`初始化Note: 轨道${track}, 命中时间${hitTime}`);
+    
     // 计算轨道位置
     const trackWidth = SCREEN_WIDTH / 4;
     this.x = track * trackWidth + (trackWidth - this.width) / 2;
@@ -43,6 +45,8 @@ export default class Note extends Sprite {
     
     // 根据轨道设置颜色
     this.color = this.getTrackColor(track);
+    
+    console.log(`Note位置: x=${this.x}, y=${this.y}`);
   }
 
   /**
@@ -73,6 +77,9 @@ export default class Note extends Sprite {
   render(ctx) {
     if (!this.isActive) return;
     
+    // 添加调试日志
+    console.log(`渲染Note: 轨道${this.track}, 位置(${this.x}, ${this.y}), 活跃状态${this.isActive}`);
+
     // 根据音符类型调整颜色和样式
     let fillColor = this.color;
     let strokeColor = '#FFFFFF';

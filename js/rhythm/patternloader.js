@@ -34,7 +34,7 @@ export default class PatternLoader {
       return [];
     }
 
-    return Object.keys(this.patterns).map(key => ({
+    const patterns = Object.keys(this.patterns).map(key => ({
       id: key,
       name: this.patterns[key].name,
       difficulty: this.patterns[key].difficulty,
@@ -42,6 +42,9 @@ export default class PatternLoader {
       timeSignature: this.patterns[key].timeSignature,
       description: this.patterns[key].description
     }));
+    
+    console.log('可用的节奏模式:', patterns);
+    return patterns;
   }
 
   /**
@@ -75,7 +78,7 @@ export default class PatternLoader {
       ...this.patterns[patternId]
     };
     
-    console.log(`设置当前节奏模式: ${this.currentPattern.name}`);
+    console.log(`设置当前节奏模式: ${this.currentPattern.name}`, this.currentPattern);
     return true;
   }
 
@@ -98,12 +101,17 @@ export default class PatternLoader {
       return [];
     }
 
+    // 临时设置currentPattern以供parseTrackString使用
+    const originalPattern = this.currentPattern;
+    this.currentPattern = pattern;
+
     const notes = [];
-    const trackCount = Object.keys(pattern.tracks).length;
+    const trackKeys = Object.keys(pattern.tracks);
     
     // 遍历每个轨道
-    for (let trackIndex = 0; trackIndex < trackCount; trackIndex++) {
-      const trackPattern = pattern.tracks[trackIndex];
+    for (const trackKey of trackKeys) {
+      const trackPattern = pattern.tracks[trackKey];
+      const trackIndex = parseInt(trackKey); // 将字符串键转换为整数索引
       if (!trackPattern) continue;
 
       // 解析轨道模式字符串
@@ -111,8 +119,13 @@ export default class PatternLoader {
       notes.push(...trackNotes);
     }
 
+    // 恢复原来的currentPattern
+    this.currentPattern = originalPattern;
+
     // 按时间排序
     notes.sort((a, b) => a.timing - b.timing);
+    
+    console.log('解析得到的音符序列:', notes);
     return notes;
   }
 
@@ -120,19 +133,26 @@ export default class PatternLoader {
    * 解析单个轨道的模式字符串
    * @param {string} trackString - 轨道模式字符串 (如 "X---X---X---X---")
    * @param {number} trackIndex - 轨道索引
+   * @param {number} bpm - 每分钟节拍数
+   * @param {string} timeSignature - 拍号 (如 "4/4")
    * @returns {Array} 音符数组
    */
   parseTrackString(trackString, trackIndex) {
     const notes = [];
     const patternLength = trackString.length;
     
-    // 计算每个字符代表的时间单位
-    // 假设字符串长度对应一个完整的小节
-    const timeUnit = 1000 / patternLength; // 毫秒
+    // 确保currentPattern已设置
+    const bpm = (this.currentPattern && this.currentPattern.bpm) ? this.currentPattern.bpm : 120;
+    console.log(`解析轨道 ${trackIndex}，BPM: ${bpm}`);
+    
+    // 计算每个字符代表的时间单位（基于BPM）
+    // 每个字符代表一个1/4拍（8分音符）
+    const timePerBeat = 60 / bpm * 1000; // 每拍的毫秒数
+    const timePerUnit = timePerBeat / 2; // 每个字符的时间（1/4拍 = 1/2 * 1拍）
 
     for (let i = 0; i < patternLength; i++) {
       const char = trackString[i];
-      const timing = i * timeUnit;
+      const timing = i * timePerUnit;
 
       if (char === 'X') {
         // 强音符
@@ -153,7 +173,8 @@ export default class PatternLoader {
       }
       // '-' 表示休止符，不生成音符
     }
-
+    
+    console.log(`轨道 ${trackIndex} 生成音符:`, notes);
     return notes;
   }
 
@@ -195,13 +216,12 @@ export default class PatternLoader {
    * @returns {Object} 可视化配置
    */
   getVisualizationConfig() {
-    if (!this.isLoaded) {
+    if (!this.isLoaded || !this.patterns) {
       return null;
     }
 
-    // 从原始数据中获取可视化配置
-    const rawData = require('../../rhythm-patterns.json');
-    return rawData.visualization || null;
+    // 从模式数据中获取可视化配置
+    return this.patterns.visualization || null;
   }
 
   /**

@@ -105,9 +105,9 @@ export default class Main {
   startGameWithConfig(config) {
     console.log('开始游戏，配置:', config);
     
-    // 设置游戏配置
+    // 设置游戏配置（只使用JSON模式）
     GameGlobal.databus.setInitialBPM(config.bpm); // 设置初始BPM
-    this.beatGenerator.setRhythmType(config.rhythmType);
+    this.beatGenerator.setRhythmPattern(config.patternId); // 设置节奏模式
     this.beatGenerator.updateBPM(config.bpm);
     
     // 开始游戏
@@ -121,9 +121,9 @@ export default class Main {
   restartGameWithConfig(config) {
     console.log('游戏内重启，配置:', config);
     
-    // 应用新配置
+    // 应用新配置（只使用JSON模式）
     GameGlobal.databus.setInitialBPM(config.bpm);
-    this.beatGenerator.setRhythmType(config.rhythmType);
+    this.beatGenerator.setRhythmPattern(config.patternId); // 设置节奏模式
     this.beatGenerator.updateBPM(config.bpm);
     
     // 重置游戏状态但保持游戏运行
@@ -333,6 +333,9 @@ export default class Main {
     
     this.trackSystem.render(ctx); // 绘制轨道系统
     
+    // 添加调试信息
+    console.log(`渲染阶段 - 音符数量: ${GameGlobal.databus.notes.length}`);
+    
     // 绘制所有节奏点
     GameGlobal.databus.notes.forEach((note) => note.render(ctx));
     
@@ -442,6 +445,15 @@ export default class Main {
     
     // 更新按键高亮效果
     this.updateKeyHighlights();
+    
+    // 添加调试信息
+    if (GameGlobal.databus.frame % 60 === 0) { // 每60帧打印一次
+      console.log(`当前节拍: ${GameGlobal.databus.bpm}`);
+      console.log(`音符数量: ${GameGlobal.databus.notes.length}`);
+      if (GameGlobal.databus.notes.length > 0) {
+        console.log(`第一个音符: 轨道${GameGlobal.databus.notes[0].track}, Y位置${GameGlobal.databus.notes[0].y}`);
+      }
+    }
   }
 
   // 实现游戏帧循环
