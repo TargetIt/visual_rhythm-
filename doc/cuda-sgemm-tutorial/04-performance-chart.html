@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGEMM 优化性能对比 — CUDA SGEMM Tutorial</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px 16px;
+  }
+  h1{
+    font-size:clamp(18px,2.4vw,28px);font-weight:700;margin-bottom:4px;
+    background:linear-gradient(90deg,#76B900,#a0d940);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    letter-spacing:.5px;
+  }
+  .subtitle{font-size:13px;color:#888;margin-bottom:18px;letter-spacing:.3px}
+  .chart-wrap{
+    position:relative;width:100%;max-width:960px;
+    background:#16213e;border:1px solid #0f3460;border-radius:12px;
+    padding:20px 24px 16px;box-shadow:0 8px 32px rgba(0,0,0,.45);
+  }
+  canvas{display:block;width:100%;cursor:crosshair}
+  .tooltip{
+    position:absolute;pointer-events:none;opacity:0;
+    background:rgba(15,20,40,.94);border:1px solid #76B900;border-radius:8px;
+    padding:12px 16px;font-size:13px;line-height:1.7;
+    box-shadow:0 6px 24px rgba(0,0,0,.5);transition:opacity .15s;
+    max-width:280px;z-index:10;
+  }
+  .tooltip .tt-title{font-weight:700;font-size:14px;margin-bottom:4px}
+  .tooltip .tt-gflops{color:#76B900;font-size:18px;font-weight:700}
+  .tooltip .tt-row{display:flex;justify-content:space-between;gap:12px}
+  .tooltip .tt-label{color:#999}
+  .tooltip .tt-desc{color:#bbb;font-size:12px;margin-top:6px;border-top:1px solid #333;padding-top:6px}
+  .legend{
+    display:flex;flex-wrap:wrap;gap:12px 20px;justify-content:center;
+    margin-top:14px;font-size:12px;color:#aaa;
+  }
+  .legend span{display:flex;align-items:center;gap:5px}
+  .legend i{display:inline-block;width:14px;height:14px;border-radius:3px}
+  .note{font-size:11px;color:#666;text-align:center;margin-top:10px;max-width:700px}
+</style>
+</head>
+<body>
+
+<h1>SGEMM 优化各阶段性能对比 (A100 GPU)</h1>
+<p class="subtitle">FP32 Matrix Multiplication — 4096 × 4096 × 4096</p>
+
+<div class="chart-wrap">
+  <canvas id="chart"></canvas>
+  <div class="tooltip" id="tooltip"></div>
+</div>
+
+<div class="legend" id="legend"></div>
+<p class="note">实心条 = 本教程已覆盖 &nbsp;|&nbsp; 半透明条 (预告) = 后续章节 &nbsp;|&nbsp; 虚线 = 理论峰值 &nbsp;|&nbsp; 数据为 A100-SXM4-80GB 实测参考值</p>
+
+<script>
+"use strict";
+
+/* ── Data ─────────────────────────────────────────────────────── */
+const PEAK = 19500;
+
+const stages = [
+  { label:"Naive\nSGEMM",        gflops:500,   color:"#ff6b6b", covered:true,
+    desc:"每个线程独立计算一个输出元素，无任何优化，全局内存随机访问。" },
+  { label:"+ Memory\nCoalescing", gflops:1500,  color:"#ffa502", covered:true,
+    desc:"调整线程到数据的映射，使同一 Warp 的线程访问连续地址，提升带宽利用率。" },
+  { label:"+ SMEM\nTiling (预告)", gflops:8000,  color:"#ffd93d", covered:false,
+    desc:"将数据分块加载到共享内存，减少全局内存访问次数，大幅降低延迟。" },
+  { label:"+ float4\nVectorized (预告)", gflops:12000, color:"#4ecdc4", covered:false,
+    desc:"使用 float4 向量化加载指令，一次读取 128-bit，提高内存吞吐效率。" },
+  { label:"+ Warp\nTiling (预告)", gflops:17000, color:"#a29bfe", covered:false,
+    desc:"Warp 级别的寄存器分块，最大化数据复用，逼近硬件理论极限。" },
+];
+
+const CUBLAS_GFLOPS = 18500;
+const CUBLAS_COLOR  = "#76B900";
+
+/* ── Canvas setup ─────────────────────────────────────────────── */
+const canvas = document.getElementById("chart");
+const ctx    = canvas.getContext("2d");
+const ttEl   = document.getElementById("tooltip");
+
+let dpr = Math.min(window.devicePixelRatio || 1, 3);
+let W, H;
+const PAD = { top:44, right:30, bottom:72, left:72 };
+
+function resize(){
+  const wrap = canvas.parentElement;
+  const cssW = wrap.clientWidth - 48;
+  const cssH = Math.min(440, Math.max(320, cssW * 0.48));
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width  = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.width  = cssW + "px";
+  canvas.style.height = cssH + "px";
+  W = canvas.width;
+  H = canvas.height;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+/* ── Drawing helpers ──────────────────────────────────────────── */
+function chartArea(){
+  const l = PAD.left, t = PAD.top;
+  const w = W/dpr - PAD.left - PAD.right;
+  const h = H/dpr - PAD.top  - PAD.bottom;
+  return {l,t,w,h};
+}
+
+function yScale(v){
+  const a = chartArea();
+  return a.t + a.h - (v / PEAK) * a.h;
+}
+
+/* bar hit-boxes for hover */
+let barRects = [];
+
+function draw(progress){
+  const cw = W/dpr, ch = H/dpr;
+  ctx.clearRect(0, 0, cw, ch);
+  const a = chartArea();
+
+  /* ── Y-axis grid + labels ───────────────────────────────────── */
+  const yTicks = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, PEAK];
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.font = "11px 'Segoe UI',system-ui,sans-serif";
+  yTicks.forEach(v=>{
+    const y = yScale(v);
+    ctx.strokeStyle = "rgba(255,255,255,.07)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(a.l, y); ctx.lineTo(a.l+a.w, y); ctx.stroke();
+    ctx.fillStyle = "#777";
+    ctx.fillText(v >= 1000 ? (v/1000).toFixed(v%1000?1:0)+"k" : v, a.l - 8, y);
+  });
+
+  /* Y-axis title */
+  ctx.save();
+  ctx.translate(16, a.t + a.h/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "bold 12px 'Segoe UI',system-ui,sans-serif";
+  ctx.fillStyle = "#999";
+  ctx.fillText("GFLOPs", 0, 0);
+  ctx.restore();
+
+  /* ── Bars ────────────────────────────────────────────────────── */
+  const n = stages.length;
+  const gap = Math.max(12, a.w * 0.06);
+  const barW = (a.w - gap*(n+1)) / n;
+  barRects = [];
+
+  stages.forEach((s, i)=>{
+    const x = a.l + gap + i*(barW + gap);
+    const targetH = (s.gflops / PEAK) * a.h;
+    const curH = targetH * progress;
+    const y = a.t + a.h - curH;
+
+    /* Bar fill */
+    const grad = ctx.createLinearGradient(x, y, x, a.t + a.h);
+    const alpha = s.covered ? 1 : 0.38;
+    grad.addColorStop(0, colorAlpha(s.color, alpha));
+    grad.addColorStop(1, colorAlpha(s.color, alpha * 0.55));
+    ctx.fillStyle = grad;
+
+    if(!s.covered){
+      ctx.setLineDash([6,4]);
+      ctx.strokeStyle = colorAlpha(s.color, 0.6);
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, barW, curH, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      roundRect(ctx, x, y, barW, curH, 4);
+      ctx.fill();
+    }
+
+    /* Value label on top of bar */
+    if(progress > 0.6){
+      const labelAlpha = Math.min(1, (progress - 0.6) / 0.4);
+      ctx.globalAlpha = labelAlpha;
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.font = "bold 13px 'Segoe UI',system-ui,sans-serif";
+      ctx.fillStyle = s.color;
+      ctx.fillText(formatGF(s.gflops), x + barW/2, y - 6);
+      ctx.globalAlpha = 1;
+    }
+
+    /* X-axis label */
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.font = "11px 'Segoe UI',system-ui,sans-serif";
+    ctx.fillStyle = s.covered ? "#ccc" : "#777";
+    const lines = s.label.split("\n");
+    lines.forEach((ln, li)=>{
+      ctx.fillText(ln, x + barW/2, a.t + a.h + 8 + li*15);
+    });
+
+    barRects.push({x, y: a.t + a.h - targetH, w:barW, h:targetH, idx:i});
+  });
+
+  /* ── Peak dashed line ───────────────────────────────────────── */
+  const peakY = yScale(PEAK);
+  ctx.setLineDash([8,5]);
+  ctx.strokeStyle = "rgba(255,255,255,.35)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(a.l, peakY); ctx.lineTo(a.l+a.w, peakY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.font = "bold 11px 'Segoe UI',system-ui,sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,.5)";
+  ctx.fillText("▲ Theoretical Peak (A100) — 19.5 TFLOPs", a.l + 4, peakY - 4);
+
+  /* ── cuBLAS reference line ──────────────────────────────────── */
+  const cublasY = yScale(CUBLAS_GFLOPS);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = CUBLAS_COLOR;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath(); ctx.moveTo(a.l, cublasY); ctx.lineTo(a.l+a.w, cublasY); ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+  ctx.font = "bold 11px 'Segoe UI',system-ui,sans-serif";
+  ctx.fillStyle = CUBLAS_COLOR;
+  ctx.fillText("cuBLAS — " + formatGF(CUBLAS_GFLOPS), a.l + a.w - 4, cublasY - 4);
+
+  /* ── Axes border ────────────────────────────────────────────── */
+  ctx.strokeStyle = "rgba(255,255,255,.2)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(a.l, a.t);
+  ctx.lineTo(a.l, a.t + a.h);
+  ctx.lineTo(a.l + a.w, a.t + a.h);
+  ctx.stroke();
+}
+
+/* ── Utilities ────────────────────────────────────────────────── */
+function colorAlpha(hex, a){
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return "rgba("+r+","+g+","+b+","+a+")";
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  if(h < 1){ ctx.beginPath(); return; }
+  r = Math.min(r, h/2, w/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h);
+  ctx.lineTo(x, y+h);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+function formatGF(v){
+  return v >= 1000 ? (v/1000).toFixed(v%1000?1:0) + "k" : String(v);
+}
+
+/* ── Animation ────────────────────────────────────────────────── */
+let animStart = null;
+const ANIM_DUR = 1200;
+
+function animate(ts){
+  if(!animStart) animStart = ts;
+  let t = Math.min(1, (ts - animStart) / ANIM_DUR);
+  t = easeOutCubic(t);
+  draw(t);
+  if(t < 1) requestAnimationFrame(animate);
+}
+
+function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
+
+/* ── Tooltip / hover ──────────────────────────────────────────── */
+canvas.addEventListener("mousemove", function(e){
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  let hit = null;
+  for(const b of barRects){
+    if(mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h){
+      hit = b; break;
+    }
+  }
+  if(hit){
+    const s = stages[hit.idx];
+    const pct = (s.gflops / PEAK * 100).toFixed(1);
+    const speedup = (s.gflops / stages[0].gflops).toFixed(1);
+    const coveredTag = s.covered
+      ? '<span style="color:#76B900">✔ 已覆盖</span>'
+      : '<span style="color:#ffa502">📌 预告</span>';
+    ttEl.innerHTML =
+      '<div class="tt-title" style="color:'+s.color+'">'+s.label.replace(/\n/g," ")+'</div>'+
+      '<div class="tt-gflops">'+s.gflops.toLocaleString()+' GFLOPs</div>'+
+      '<div class="tt-row"><span class="tt-label">峰值占比</span><span>'+pct+'%</span></div>'+
+      '<div class="tt-row"><span class="tt-label">vs Naive</span><span>'+speedup+'×</span></div>'+
+      '<div class="tt-row"><span class="tt-label">状态</span>'+coveredTag+'</div>'+
+      '<div class="tt-desc">'+s.desc+'</div>';
+    ttEl.style.opacity = 1;
+
+    const wrapRect = canvas.parentElement.getBoundingClientRect();
+    let tx = e.clientX - wrapRect.left + 16;
+    let ty = e.clientY - wrapRect.top  - 10;
+    if(tx + 280 > wrapRect.width) tx = tx - 296;
+    if(ty < 0) ty = 10;
+    ttEl.style.left = tx + "px";
+    ttEl.style.top  = ty + "px";
+  } else {
+    ttEl.style.opacity = 0;
+  }
+});
+canvas.addEventListener("mouseleave", function(){ ttEl.style.opacity = 0; });
+
+/* ── Legend ────────────────────────────────────────────────────── */
+(function buildLegend(){
+  const el = document.getElementById("legend");
+  stages.forEach(s=>{
+    const opacity = s.covered ? 1 : 0.45;
+    el.innerHTML += '<span><i style="background:'+s.color+';opacity:'+opacity+'"></i>'+s.label.replace(/\n/g," ")+'</span>';
+  });
+  el.innerHTML += '<span><i style="background:'+CUBLAS_COLOR+'"></i>cuBLAS Reference</span>';
+  el.innerHTML += '<span><i style="background:transparent;border:1.5px dashed rgba(255,255,255,.4)"></i>Theoretical Peak</span>';
+})();
+
+/* ── Init ─────────────────────────────────────────────────────── */
+function init(){
+  resize();
+  requestAnimationFrame(animate);
+}
+window.addEventListener("resize", function(){
+  resize();
+  animStart = null;
+  requestAnimationFrame(animate);
+});
+init();
+</script>
+</body>
+</html>
