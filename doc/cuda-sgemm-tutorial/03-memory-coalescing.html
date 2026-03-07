@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Memory Coalescing: 合并访存可视化</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#1a1a2e;--surface:#22253a;--surface2:#2a2e42;--border:#33385a;
+    --text:#e0e0e0;--text-dim:#8a8fae;--green:#76B900;--green-dim:#4a7600;
+    --red:#ff6b6b;--yellow:#ffd93d;--cyan:#4ecdc4;--purple:#c084fc;
+    --orange:#ff9f43;
+    --radius:10px;--shadow:0 4px 24px rgba(0,0,0,.5);
+  }
+  html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+  body{display:flex;flex-direction:column;overflow-x:hidden}
+
+  header{text-align:center;padding:18px 16px 12px;border-bottom:1px solid var(--border)}
+  header h1{font-size:1.5rem;font-weight:700;letter-spacing:.5px}
+  header h1 span{color:var(--green)}
+  header p{font-size:.82rem;color:var(--text-dim);margin-top:4px}
+
+  .controls{display:flex;align-items:center;justify-content:center;gap:20px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+
+  .toggle-btn{position:relative;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+  .toggle-btn .track{width:52px;height:26px;border-radius:13px;background:var(--green-dim);transition:background .3s;position:relative}
+  .toggle-btn .track .thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .3s}
+  .toggle-btn.active .track{background:var(--red)}
+  .toggle-btn.active .track .thumb{left:29px}
+  .toggle-btn .lbl{font-size:.82rem;font-weight:600}
+  .toggle-btn .lbl-left{color:var(--green)}
+  .toggle-btn.active .lbl-left{color:var(--text-dim)}
+  .toggle-btn .lbl-right{color:var(--text-dim)}
+  .toggle-btn.active .lbl-right{color:var(--red)}
+
+  .k-controls{display:flex;align-items:center;gap:10px}
+  .k-controls label{font-size:.82rem;color:var(--text-dim);white-space:nowrap}
+  .k-controls input[type=range]{width:120px;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:var(--surface2);outline:none}
+  .k-controls input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 0 6px rgba(118,185,0,.5)}
+  .k-controls .k-val{font-weight:700;font-size:.9rem;min-width:24px;text-align:center}
+
+  .play-btn{width:36px;height:36px;border-radius:50%;border:2px solid var(--green);background:transparent;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;transition:all .2s}
+  .play-btn:hover{background:var(--green);color:var(--bg)}
+  .play-btn.playing{border-color:var(--orange);color:var(--orange)}
+  .play-btn.playing:hover{background:var(--orange);color:var(--bg)}
+
+  .main{display:flex;flex:1;gap:12px;padding:12px 16px;min-height:0;overflow:hidden}
+  .panel{display:flex;flex-direction:column;gap:10px;min-height:0}
+  .panel-left{flex:1.2;min-width:0}
+  .panel-right{flex:1;min-width:0}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;display:flex;flex-direction:column}
+  .card h2{font-size:.88rem;color:var(--green);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .card h2::before{content:'';display:inline-block;width:3px;height:14px;background:var(--green);border-radius:2px}
+
+  .canvas-wrap{flex:1;position:relative;min-height:200px}
+  .canvas-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+
+  .bw-card{flex-shrink:0}
+  .bw-bar-wrap{height:28px;background:var(--surface2);border-radius:6px;overflow:hidden;position:relative;margin:8px 0 4px}
+  .bw-bar{height:100%;border-radius:6px;transition:width .5s ease, background .5s ease;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:.75rem;font-weight:700;color:var(--bg);min-width:40px}
+  .bw-stats{display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-dim)}
+
+  .info-card{flex-shrink:0}
+  .info-card p{font-size:.78rem;color:var(--text-dim);line-height:1.6;margin-bottom:6px}
+  .info-card code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:.76rem;color:var(--cyan)}
+  .info-card .formula{background:var(--surface2);border-left:3px solid var(--green);padding:8px 12px;border-radius:0 6px 6px 0;margin:8px 0;font-size:.8rem;font-family:'Courier New',monospace;color:var(--yellow)}
+  .highlight-green{color:var(--green);font-weight:700}
+  .highlight-red{color:var(--red);font-weight:700}
+
+  .txn-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:16px;font-size:.9rem;font-weight:700;margin-top:6px}
+  .txn-badge.good{background:rgba(118,185,0,.15);color:var(--green);border:1px solid rgba(118,185,0,.3)}
+  .txn-badge.bad{background:rgba(255,107,107,.15);color:var(--red);border:1px solid rgba(255,107,107,.3)}
+
+  @media(max-width:900px){
+    .main{flex-direction:column}
+    .panel{width:100%}
+    .canvas-wrap{min-height:280px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>Global Memory Coalescing</span>: 合并访存可视化</h1>
+  <p>CUDA SGEMM Tutorial — Warp 内 32 线程如何访问全局内存</p>
+</header>
+
+<div class="controls">
+  <div class="toggle-btn" id="modeToggle">
+    <span class="lbl lbl-left">✓ Coalesced (B矩阵)</span>
+    <div class="track"><div class="thumb"></div></div>
+    <span class="lbl lbl-right">✗ Non-coalesced (A矩阵, strided)</span>
+  </div>
+
+  <div class="k-controls">
+    <label>K-step:</label>
+    <input type="range" id="kSlider" min="0" max="7" step="1" value="0">
+    <span class="k-val" id="kVal">0</span>
+    <button class="play-btn" id="playBtn" title="Auto-play">▶</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel panel-left">
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <h2>Thread → Address Mapping (Warp中32个线程)</h2>
+      <div class="canvas-wrap"><canvas id="threadCanvas"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel panel-right">
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <h2>Memory Transactions (128B Cache Lines)</h2>
+      <div class="canvas-wrap"><canvas id="memCanvas"></canvas></div>
+      <div style="text-align:center;margin-top:6px">
+        <span class="txn-badge good" id="txnBadge">1 Transaction</span>
+      </div>
+    </div>
+
+    <div class="card bw-card">
+      <h2>Bandwidth Utilization 带宽利用率</h2>
+      <div class="bw-bar-wrap">
+        <div class="bw-bar" id="bwBar" style="width:100%;background:var(--green)">100%</div>
+      </div>
+      <div class="bw-stats">
+        <span>Requested: <b id="bwReq">128</b> B</span>
+        <span>Transferred: <b id="bwTrans">128</b> B</span>
+      </div>
+    </div>
+
+    <div class="card info-card">
+      <h2>Why Coalescing Matters 为什么合并访存重要</h2>
+      <p>一个 Warp (32 threads) 中每个线程读取 4 字节 (float)，共需 <code>32 × 4 = 128 bytes</code>。</p>
+      <p>GPU 内存控制器以 <b>128 字节 cache line</b> 为单位传输。如果 32 个地址落在同一 cache line 内（<span class="highlight-green">合并访存</span>），只需 <b>1 次</b>事务；</p>
+      <p>如果地址散布在 N 个 cache line 中（<span class="highlight-red">非合并</span>），则需 <b>N 次</b>事务，浪费带宽。</p>
+      <div class="formula">Utilization = bytes_requested / bytes_transferred = 128 / (N_transactions × 128)</div>
+      <p>在 Naive SGEMM 中，访问 <b>B 矩阵列</b>（行优先存储的连续地址）是合并的；访问 <b>A 矩阵行中跨列元素</b>（stride = N）则不合并。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// --- State ---
+const N_THREADS = 32;
+const CACHE_LINE = 128;
+const FLOAT_SIZE = 4;
+const MATRIX_N = 128;
+
+let nonCoalesced = false;
+let kStep = 0;
+let playing = false;
+let playTimer = null;
+let animT = 0;
+let prevTime = 0;
+
+// Colors
+const BG       = "#1a1a2e";
+const SURFACE  = "#22253a";
+const GREEN    = "#76B900";
+const GREEN_DIM= "#3a5e00";
+const RED      = "#ff6b6b";
+const RED_DIM  = "#7a2020";
+const CYAN     = "#4ecdc4";
+const YELLOW   = "#ffd93d";
+const ORANGE   = "#ff9f43";
+const TEXT     = "#e0e0e0";
+const TEXT_DIM = "#6a6f8e";
+const PURPLE   = "#c084fc";
+
+// Thread colors - warm palette for threads
+function threadColor(i, alpha) {
+  const hue = (i / N_THREADS) * 270 + 100;
+  return `hsla(${hue},70%,60%,${alpha||1})`;
+}
+
+// Cache line palette
+const CL_COLORS = [
+  "#76B900","#4ecdc4","#c084fc","#ffd93d","#ff6b6b","#ff9f43",
+  "#45b7d1","#96ceb4","#d4a574","#e056a0","#7c6efa","#5ce0d2",
+  "#f7dc6f","#ff8a80","#b39ddb","#80deea","#a5d6a7","#ffcc80",
+  "#ef9a9a","#ce93d8","#81d4fa","#c5e1a5","#ffe082","#ffab91",
+  "#bcaaa4","#b0bec5","#9fa8da","#80cbc4","#e6ee9c","#f48fb1",
+  "#90caf9","#a5d6a7"
+];
+
+// --- Compute addresses ---
+function getAddresses(coalesced, k) {
+  const baseCoalesced = 0x1000 + k * N_THREADS * FLOAT_SIZE;
+  const baseStrided   = 0x1000 + k * FLOAT_SIZE;
+  const addrs = [];
+  for (let t = 0; t < N_THREADS; t++) {
+    if (coalesced) {
+      addrs.push(baseCoalesced + t * FLOAT_SIZE);
+    } else {
+      addrs.push(baseStrided + t * MATRIX_N * FLOAT_SIZE);
+    }
+  }
+  return addrs;
+}
+
+function getCacheLines(addrs) {
+  const set = new Set();
+  for (const a of addrs) {
+    set.add(Math.floor(a / CACHE_LINE));
+  }
+  return Array.from(set).sort((a,b) => a - b);
+}
+
+function getAddrCacheLine(addr) {
+  return Math.floor(addr / CACHE_LINE);
+}
+
+// --- Animation state interpolation ---
+let displayAddrs = getAddresses(true, 0).map(a => a);
+let targetAddrs = displayAddrs.slice();
+let displayNonCoalesced = 0;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// --- Canvas setup ---
+const threadCanvas = document.getElementById("threadCanvas");
+const memCanvas    = document.getElementById("memCanvas");
+const threadCtx    = threadCanvas.getContext("2d");
+const memCtx       = memCanvas.getContext("2d");
+
+function resizeCanvas(canvas) {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w: rect.width, h: rect.height };
+}
+
+// --- Draw Thread Panel ---
+function drawThreadPanel(dt) {
+  const {w, h} = resizeCanvas(threadCanvas);
+  const ctx = threadCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  const addrs = targetAddrs;
+  const cls = getCacheLines(addrs);
+  const clMap = {};
+  cls.forEach((cl, i) => clMap[cl] = i);
+
+  const rowH = Math.min(22, (h - 20) / N_THREADS);
+  const startY = Math.max(4, (h - rowH * N_THREADS) / 2);
+  const threadW = 90;
+  const addrX = w * 0.55;
+  const threadX = 16;
+  const arrowStartX = threadX + threadW + 4;
+
+  for (let t = 0; t < N_THREADS; t++) {
+    const y = startY + t * rowH;
+    const addr = addrs[t];
+    const cl = getAddrCacheLine(addr);
+    const cIdx = clMap[cl] % CL_COLORS.length;
+
+    // Animated flash on transition
+    const flash = Math.max(0, 1 - animT * 2);
+    const alpha = 0.75 + 0.25 * Math.sin(animT * 3 + t * 0.2);
+
+    // Thread rect
+    ctx.fillStyle = CL_COLORS[cIdx];
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(threadX, y, threadW, rowH - 2, 3);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Thread label
+    ctx.fillStyle = BG;
+    ctx.font = `bold ${Math.min(11, rowH - 4)}px monospace`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText(`T${t}`, threadX + threadW / 2, y + (rowH - 2) / 2);
+
+    // Arrow
+    const arrowEndX = addrX - 6;
+    ctx.strokeStyle = CL_COLORS[cIdx];
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(arrowStartX, y + (rowH - 2) / 2);
+    ctx.lineTo(arrowEndX, y + (rowH - 2) / 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Arrowhead
+    ctx.fillStyle = CL_COLORS[cIdx];
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(arrowEndX, y + (rowH - 2) / 2);
+    ctx.lineTo(arrowEndX - 5, y + (rowH - 2) / 2 - 3);
+    ctx.lineTo(arrowEndX - 5, y + (rowH - 2) / 2 + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Address text
+    ctx.fillStyle = TEXT;
+    ctx.font = `${Math.min(10, rowH - 5)}px monospace`;
+    ctx.textAlign = "left";
+    ctx.fillText(`0x${addr.toString(16).toUpperCase().padStart(6,'0')}`, addrX, y + (rowH - 2) / 2);
+
+    // Cache line indicator
+    const clText = `CL${cl - cls[0]}`;
+    ctx.fillStyle = CL_COLORS[cIdx];
+    ctx.font = `bold ${Math.min(9, rowH - 5)}px monospace`;
+    ctx.textAlign = "right";
+    ctx.fillText(clText, w - 8, y + (rowH - 2) / 2);
+  }
+
+  // Header labels
+  ctx.fillStyle = TEXT_DIM;
+  ctx.font = "bold 10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Thread", threadX + threadW / 2, startY - 6);
+  ctx.fillText("Address", addrX + 30, startY - 6);
+  ctx.textAlign = "right";
+  ctx.fillText("Cache Line", w - 8, startY - 6);
+}
+
+// --- Draw Memory Panel ---
+function drawMemPanel(dt) {
+  const {w, h} = resizeCanvas(memCanvas);
+  const ctx = memCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  const addrs = targetAddrs;
+  const cls = getCacheLines(addrs);
+  const numCL = cls.length;
+  const clMin = cls[0];
+  const clMax = cls[cls.length - 1];
+  const totalCL = clMax - clMin + 1;
+
+  // Build map: which threads hit which cache line
+  const clThreads = {};
+  for (let t = 0; t < N_THREADS; t++) {
+    const cl = getAddrCacheLine(addrs[t]);
+    if (!clThreads[cl]) clThreads[cl] = [];
+    clThreads[cl].push(t);
+  }
+
+  const isCoalesced = numCL <= 2;
+  const margin = 16;
+  const topY = 40;
+
+  if (isCoalesced || totalCL <= 16) {
+    // Horizontal strip view
+    const segW = Math.min(40, (w - margin * 2) / totalCL);
+    const segH = 50;
+    const startX = (w - segW * totalCL) / 2;
+    const baseY = topY + 10;
+
+    ctx.fillStyle = TEXT_DIM;
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Memory Address Space (128B segments)", w / 2, topY - 2);
+
+    for (let i = 0; i < totalCL; i++) {
+      const cl = clMin + i;
+      const x = startX + i * segW;
+      const isHit = clThreads[cl] !== undefined;
+
+      // Segment
+      const pulse = isHit ? 0.8 + 0.2 * Math.sin(animT * 4 + i * 0.5) : 0.2;
+      ctx.globalAlpha = pulse;
+      const hitIdx = cls.indexOf(cl);
+      ctx.fillStyle = isHit ? CL_COLORS[hitIdx % CL_COLORS.length] : "#2a2e42";
+      ctx.beginPath();
+      ctx.roundRect(x + 1, baseY, segW - 2, segH, 4);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Border
+      ctx.strokeStyle = isHit ? CL_COLORS[hitIdx % CL_COLORS.length] : "#33385a";
+      ctx.lineWidth = isHit ? 2 : 1;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, baseY, segW - 2, segH, 4);
+      ctx.stroke();
+
+      if (isHit && segW > 20) {
+        // Thread count
+        ctx.fillStyle = BG;
+        ctx.font = `bold ${Math.min(14, segW - 6)}px monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(clThreads[cl].length, x + segW / 2, baseY + segH / 2);
+      }
+
+      // Label below
+      if (segW > 18) {
+        ctx.fillStyle = TEXT_DIM;
+        ctx.font = "8px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(`+${i * 128}`, x + segW / 2, baseY + segH + 4);
+      }
+    }
+
+    // Draw arrows from threads down to their cache lines
+    const arrowBaseY = baseY + segH + 24;
+    ctx.fillStyle = TEXT_DIM;
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("▲ Each colored segment = 1 memory transaction (128B)", w / 2, arrowBaseY + 10);
+
+  } else {
+    // Grid view for many cache lines
+    const cols = Math.min(8, Math.ceil(Math.sqrt(totalCL)));
+    const rows = Math.ceil(totalCL / cols);
+    const cellW = Math.min(36, (w - margin * 2) / cols);
+    const cellH = Math.min(36, (h - topY - 60) / rows);
+    const startX = (w - cellW * cols) / 2;
+    const baseY = topY + 10;
+
+    ctx.fillStyle = TEXT_DIM;
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Memory Address Space (each cell = 128B cache line)", w / 2, topY - 2);
+
+    for (let i = 0; i < totalCL; i++) {
+      const cl = clMin + i;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * cellW;
+      const y = baseY + row * cellH;
+      const isHit = clThreads[cl] !== undefined;
+
+      const pulse = isHit ? 0.8 + 0.2 * Math.sin(animT * 4 + i * 0.3) : 0.15;
+      ctx.globalAlpha = pulse;
+      const hitIdx = cls.indexOf(cl);
+      ctx.fillStyle = isHit ? CL_COLORS[hitIdx % CL_COLORS.length] : "#2a2e42";
+      ctx.beginPath();
+      ctx.roundRect(x + 1, y + 1, cellW - 2, cellH - 2, 3);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      ctx.strokeStyle = isHit ? CL_COLORS[hitIdx % CL_COLORS.length] : "#33385a";
+      ctx.lineWidth = isHit ? 1.5 : 0.5;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, y + 1, cellW - 2, cellH - 2, 3);
+      ctx.stroke();
+
+      if (isHit && cellW > 16 && cellH > 16) {
+        ctx.fillStyle = BG;
+        ctx.font = `bold ${Math.min(11, cellW - 8)}px monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(clThreads[cl].length, x + cellW / 2, y + cellH / 2);
+      }
+    }
+
+    const bottomY = baseY + rows * cellH + 14;
+    ctx.fillStyle = TEXT_DIM;
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`${totalCL} cache lines spanned — ${numCL} lines touched`, w / 2, bottomY);
+  }
+
+  // Transaction summary at bottom
+  const sumY = h - 24;
+  ctx.fillStyle = isCoalesced ? GREEN : RED;
+  ctx.font = "bold 13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(
+    isCoalesced
+      ? `✓ ${numCL} cache line${numCL>1?'s':''} accessed — COALESCED`
+      : `✗ ${numCL} cache lines accessed — NOT COALESCED`,
+    w / 2, sumY
+  );
+}
+
+// --- Update bandwidth meter ---
+function updateBandwidth() {
+  const addrs = targetAddrs;
+  const cls = getCacheLines(addrs);
+  const numTxn = cls.length;
+  const requested = N_THREADS * FLOAT_SIZE;
+  const transferred = numTxn * CACHE_LINE;
+  const util = (requested / transferred * 100);
+
+  const bar = document.getElementById("bwBar");
+  bar.style.width = Math.max(8, util) + "%";
+  bar.textContent = util.toFixed(1) + "%";
+
+  if (util > 80) {
+    bar.style.background = "var(--green)";
+  } else if (util > 30) {
+    bar.style.background = "var(--orange)";
+  } else {
+    bar.style.background = "var(--red)";
+  }
+
+  document.getElementById("bwReq").textContent = requested;
+  document.getElementById("bwTrans").textContent = transferred;
+
+  // Transaction badge
+  const badge = document.getElementById("txnBadge");
+  badge.textContent = numTxn === 1 ? "1 Transaction" : `${numTxn} Transactions`;
+  if (numTxn <= 2) {
+    badge.className = "txn-badge good";
+  } else {
+    badge.className = "txn-badge bad";
+  }
+}
+
+// --- Controls ---
+const modeToggle = document.getElementById("modeToggle");
+const kSlider    = document.getElementById("kSlider");
+const kValSpan   = document.getElementById("kVal");
+const playBtn    = document.getElementById("playBtn");
+
+modeToggle.addEventListener("click", () => {
+  nonCoalesced = !nonCoalesced;
+  modeToggle.classList.toggle("active", nonCoalesced);
+  updateTarget();
+});
+
+kSlider.addEventListener("input", () => {
+  kStep = parseInt(kSlider.value);
+  kValSpan.textContent = kStep;
+  updateTarget();
+});
+
+playBtn.addEventListener("click", () => {
+  playing = !playing;
+  playBtn.classList.toggle("playing", playing);
+  playBtn.textContent = playing ? "⏸" : "▶";
+  if (playing) {
+    startAutoPlay();
+  } else {
+    stopAutoPlay();
+  }
+});
+
+function startAutoPlay() {
+  stopAutoPlay();
+  playTimer = setInterval(() => {
+    kStep = (kStep + 1) % 8;
+    kSlider.value = kStep;
+    kValSpan.textContent = kStep;
+    updateTarget();
+  }, 1200);
+}
+
+function stopAutoPlay() {
+  if (playTimer) {
+    clearInterval(playTimer);
+    playTimer = null;
+  }
+}
+
+function updateTarget() {
+  targetAddrs = getAddresses(!nonCoalesced, kStep);
+  animT = 0;
+  updateBandwidth();
+}
+
+// --- Animation loop ---
+function animate(timestamp) {
+  const dt = Math.min(0.05, (timestamp - prevTime) / 1000);
+  prevTime = timestamp;
+  animT += dt;
+
+  // Smooth interpolation of display addresses toward target
+  for (let i = 0; i < N_THREADS; i++) {
+    displayAddrs[i] = lerp(displayAddrs[i], targetAddrs[i], Math.min(1, dt * 8));
+  }
+  displayNonCoalesced = lerp(displayNonCoalesced, nonCoalesced ? 1 : 0, Math.min(1, dt * 6));
+
+  drawThreadPanel(dt);
+  drawMemPanel(dt);
+
+  requestAnimationFrame(animate);
+}
+
+// --- Init ---
+updateTarget();
+prevTime = performance.now();
+requestAnimationFrame(animate);
+window.addEventListener("resize", () => {});
+
+// roundRect polyfill for older browsers
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === "number") r = [r, r, r, r];
+    this.moveTo(x + r[0], y);
+    this.lineTo(x + w - r[1], y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r[1]);
+    this.lineTo(x + w, y + h - r[2]);
+    this.quadraticCurveTo(x + w, y + h, x + w - r[2], y + h);
+    this.lineTo(x + r[3], y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r[3]);
+    this.lineTo(x, y + r[0]);
+    this.quadraticCurveTo(x, y, x + r[0], y);
+    this.closePath();
+    return this;
+  };
+}
+
+})();
+</script>
+</body>
+</html>
