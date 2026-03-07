@@ -228,12 +228,19 @@ const memCanvas    = document.getElementById("memCanvas");
 const threadCtx    = threadCanvas.getContext("2d");
 const memCtx       = memCanvas.getContext("2d");
 
+const _canvasSizes = new WeakMap();
 function resizeCanvas(canvas) {
   const rect = canvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  canvas.width  = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+  const newW = Math.round(rect.width * dpr);
+  const newH = Math.round(rect.height * dpr);
+  const prev = _canvasSizes.get(canvas);
+  if (!prev || prev.w !== newW || prev.h !== newH) {
+    canvas.width  = newW;
+    canvas.height = newH;
+    canvas.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+    _canvasSizes.set(canvas, { w: newW, h: newH });
+  }
   return { w: rect.width, h: rect.height };
 }
 

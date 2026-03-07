@@ -98,6 +98,7 @@ let animTimer = null;
 
 /* ── Layout constants ───────────────────────────── */
 const CELL = 34, PAD = 6, GAP = 52, HDR = 30, LABEL_W = 48;
+const BYTES_PER_FLOAT = 4;
 
 function totalW () { return LABEL_W + K * CELL + GAP + K * CELL + GAP + N * CELL + PAD * 2 }
 function totalH () { return HDR + Math.max(M, K) * CELL + PAD * 2 }
@@ -309,7 +310,6 @@ $('kSlider').addEventListener('input', e => {
 function updateStats () {
   const FLOPS_PER_ELEM = 2;        // one multiply + one add
   const READS_PER_ELEM = 2;        // one from A, one from B
-  const BYTES_PER_FLOAT = 4;
   const flops = FLOPS_PER_ELEM * M * N * K;
   const reads = READS_PER_ELEM * M * N * K;
   const bytes = reads * BYTES_PER_FLOAT;

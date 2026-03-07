@@ -23,7 +23,7 @@
 在 GPU 编程中，**计算不是瓶颈，数据搬运才是**。一个 NVIDIA GPU（如 A100）的峰值算力可达 19.5 TFLOPS（FP32），但全局内存（Global Memory / GMEM）的带宽仅有约 2 TB/s。这意味着：
 
 - 如果你的 kernel 每做一次乘加运算就需要从全局内存读取两个 float（8 字节），那你的计算强度（Arithmetic Intensity）仅为 `2 FLOPs / 8 Bytes = 0.25 FLOP/Byte`。
-- 根据 Roofline 模型，此时**内存带宽**会将你的实际性能限制在 `0.25 × 2000 = 500 GFLOPS`，远低于 19.5 TFLOPS 的峰值。
+- 根据 Roofline 模型，此时**内存带宽**会将你的实际性能限制在 `0.25 FLOP/Byte × 2000 GB/s = 500 GFLOPS`，远低于 19.5 TFLOPS 的峰值。
 
 因此，优化 SGEMM 的核心思路就是：**减少对慢速 GMEM 的访问，充分利用快速的 SMEM（共享内存）和寄存器（Registers）**。
 
@@ -86,7 +86,7 @@ __global__ void sgemm_naive(int M, int N, int K,
 
 1. **零数据复用**：相邻线程在计算 C 的同一行不同列时，都需要读取 A 的同一行。但每个线程独立地从 GMEM 读取，完全没有复用。对于 M=N=K=4096 的矩阵，GMEM 读取总量为 `2 × M × N × K × 4 Bytes` ≈ 512 GB。
 
-2. **访存效率低**：对矩阵 A，同一个 warp 中的 32 个线程（threadIdx.x = 0~31）访问的是 `A[row][0], A[row][0], A[row][0], ...`（同一行的同一个元素！），因为 K 循环的每一步中，它们的 row 不同但 k 相同。**这不是合并访存**。
+2. **访存效率低**：对矩阵 A，同一个 warp 中的 32 个线程拥有相同的 `threadIdx.y`（即相同的 `row`）但不同的 `threadIdx.x`（即不同的 `col`）。在 K 循环的每一步中，它们都访问相同的地址 `A[row * K + k]`——这是广播（broadcast），而非合并访存，无法充分利用内存带宽。
 
 3. **性能**：在 A100 上，Naive SGEMM 约为 **500 GFLOPS**，仅为峰值性能的 ~2.5%。
 
