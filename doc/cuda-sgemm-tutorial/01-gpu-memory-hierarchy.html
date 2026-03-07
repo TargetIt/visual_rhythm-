@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU 内存层级交互式可视化</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#181a20;--surface:#22252e;--surface2:#2a2e38;--border:#33384a;
+    --text:#e0e0e0;--text-dim:#8a8f9e;--green:#76B900;--green-dim:#4a7600;
+    --reg:#ff6b6b;--smem:#ffd93d;--gmem:#4ecdc4;--core:#c084fc;
+    --radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4);
+  }
+  html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+  body{display:flex;flex-direction:column;overflow-x:hidden}
+
+  header{text-align:center;padding:20px 16px 10px;border-bottom:1px solid var(--border)}
+  header h1{font-size:1.6rem;font-weight:700;letter-spacing:.5px}
+  header h1 span{color:var(--green)}
+  header p{font-size:.85rem;color:var(--text-dim);margin-top:4px}
+
+  .main{display:flex;flex:1;gap:16px;padding:16px;min-height:0}
+  .left-panel{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .right-panel{width:320px;display:flex;flex-direction:column;gap:12px;flex-shrink:0}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+  .card h2{font-size:.95rem;color:var(--green);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .card h2::before{content:'';display:inline-block;width:3px;height:14px;background:var(--green);border-radius:2px}
+
+  .canvas-wrap{flex:1;position:relative;min-height:400px}
+  .canvas-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;border-radius:var(--radius)}
+
+  .slider-row{display:flex;align-items:center;gap:12px}
+  .slider-row label{font-size:.85rem;white-space:nowrap;color:var(--text-dim)}
+  .slider-row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:var(--surface2);outline:none}
+  .slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 0 6px rgba(118,185,0,.5)}
+  .slider-row .level-label{min-width:90px;text-align:right;font-weight:600;font-size:.85rem}
+
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .info-item{background:var(--surface2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column}
+  .info-item .label{font-size:.7rem;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin-bottom:2px}
+  .info-item .value{font-size:1rem;font-weight:700}
+
+  .legend-list{display:flex;flex-wrap:wrap;gap:10px 18px}
+  .legend-list .item{display:flex;align-items:center;gap:6px;font-size:.8rem}
+  .legend-list .swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+
+  .roofline-wrap{position:relative;height:200px}
+  .roofline-wrap canvas{width:100%;height:100%;border-radius:8px}
+
+  .ai-slider-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .ai-slider-row label{font-size:.78rem;color:var(--text-dim);white-space:nowrap}
+  .ai-slider-row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;background:var(--surface2);outline:none}
+  .ai-slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--gmem);cursor:pointer}
+  .ai-slider-row .ai-val{min-width:80px;font-size:.78rem;text-align:right;font-weight:600;color:var(--gmem)}
+
+  @media(max-width:860px){
+    .main{flex-direction:column}
+    .right-panel{width:100%}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>GPU</span> 内存层级交互式可视化</h1>
+  <p>CUDA SGEMM Tutorial — GMEM → SMEM → Registers 数据流动演示</p>
+</header>
+
+<div class="main">
+  <!-- Left: GPU diagram + slider -->
+  <div class="left-panel">
+    <div class="card canvas-wrap" id="gpuCard">
+      <canvas id="gpuCanvas"></canvas>
+    </div>
+    <div class="card">
+      <div class="slider-row">
+        <label>Memory Access Target:</label>
+        <input type="range" id="levelSlider" min="0" max="2" step="1" value="0">
+        <span class="level-label" id="levelLabel" style="color:var(--reg)">Registers</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: info + legend + roofline -->
+  <div class="right-panel">
+    <div class="card">
+      <h2>内存层级详情</h2>
+      <div class="info-grid" id="infoGrid">
+        <div class="info-item"><span class="label">带宽 Bandwidth</span><span class="value" id="infoBW">—</span></div>
+        <div class="info-item"><span class="label">延迟 Latency</span><span class="value" id="infoLat">—</span></div>
+        <div class="info-item"><span class="label">容量 Capacity</span><span class="value" id="infoCap">—</span></div>
+        <div class="info-item"><span class="label">作用域 Scope</span><span class="value" id="infoScope">—</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>颜色图例 Legend</h2>
+      <div class="legend-list">
+        <div class="item"><div class="swatch" style="background:var(--core)"></div>SM Core (计算核心)</div>
+        <div class="item"><div class="swatch" style="background:var(--reg)"></div>Registers (寄存器)</div>
+        <div class="item"><div class="swatch" style="background:var(--smem)"></div>Shared Memory (共享内存)</div>
+        <div class="item"><div class="swatch" style="background:var(--gmem)"></div>Global Memory (全局内存)</div>
+        <div class="item"><div class="swatch" style="background:var(--green)"></div>Data Packet (数据包)</div>
+      </div>
+    </div>
+
+    <div class="card" style="flex:1;display:flex;flex-direction:column">
+      <h2>Roofline 模型</h2>
+      <div class="roofline-wrap" style="flex:1">
+        <canvas id="roofCanvas"></canvas>
+      </div>
+      <div class="ai-slider-row">
+        <label>算术强度 AI (FLOP/Byte):</label>
+        <input type="range" id="aiSlider" min="0.1" max="64" step="0.1" value="4">
+        <span class="ai-val" id="aiVal">4.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Utility ──
+const dpr = window.devicePixelRatio || 1;
+function hiDpiCanvas(canvas) {
+  const r = canvas.getBoundingClientRect();
+  canvas.width = r.width * dpr;
+  canvas.height = r.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: r.width, h: r.height };
+}
+
+// ── Memory level data ──
+const LEVELS = [
+  { name: 'Registers', color: '#ff6b6b', bw: '~8 TB/s per SM', latency: '~1 cycle', cap: '~256 KB / SM', scope: 'Per Thread', cycles: 1 },
+  { name: 'Shared Mem', color: '#ffd93d', bw: '~1.5 TB/s per SM', latency: '~20 cycles', cap: '48–164 KB / SM', scope: 'Per Block', cycles: 20 },
+  { name: 'Global Mem', color: '#4ecdc4', bw: '~2 TB/s device', latency: '~400 cycles', cap: '40–80 GB', scope: 'All Threads', cycles: 400 },
+];
+
+// ── Info panel ──
+const infoBW = document.getElementById('infoBW');
+const infoLat = document.getElementById('infoLat');
+const infoCap = document.getElementById('infoCap');
+const infoScope = document.getElementById('infoScope');
+const levelLabel = document.getElementById('levelLabel');
+const levelSlider = document.getElementById('levelSlider');
+
+function updateInfo(i) {
+  const l = LEVELS[i];
+  infoBW.textContent = l.bw;
+  infoLat.textContent = l.latency;
+  infoCap.textContent = l.cap;
+  infoScope.textContent = l.scope;
+  infoBW.style.color = l.color;
+  infoLat.style.color = l.color;
+  levelLabel.textContent = l.name;
+  levelLabel.style.color = l.color;
+}
+
+// ── GPU Canvas ──
+const gpuCanvas = document.getElementById('gpuCanvas');
+let gpu, gpuW, gpuH;
+
+// Packet animation state
+const ANIM_CYCLE_SCALE = 0.8; // scales cycle count for visual timing
+const ANIM_BASE_DELAY = 40;   // minimum frames so even register access is visible
+let packets = [];
+let currentLevel = 0;
+
+function spawnPacket(level) {
+  packets.push({ level, t: 0, speed: 1 / (LEVELS[level].cycles * ANIM_CYCLE_SCALE + ANIM_BASE_DELAY) });
+}
+
+levelSlider.addEventListener('input', () => {
+  const v = +levelSlider.value;
+  currentLevel = v;
+  updateInfo(v);
+  spawnPacket(v);
+});
+
+// Layout helpers (computed relative to canvas size)
+function layout(w, h) {
+  const cx = w * 0.5;
+  const pad = 30;
+  const usableH = h - pad * 2;
+  // Core at top, GMEM at bottom
+  const coreY = pad + usableH * 0.07;
+  const coreH = usableH * 0.10;
+  const regY = coreY + coreH + usableH * 0.04;
+  const regH = usableH * 0.10;
+  const smemY = regY + regH + usableH * 0.06;
+  const smemH = usableH * 0.14;
+  const gmemY = smemY + smemH + usableH * 0.08;
+  const gmemH = usableH * 0.18;
+  const bw = Math.min(w * 0.55, 340);
+  return { cx, pad, coreY, coreH, regY, regH, smemY, smemH, gmemY, gmemH, bw };
+}
+
+function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+}
+
+function drawChip(ctx, w, h, time) {
+  const L = layout(w, h);
+  const { cx, coreY, coreH, regY, regH, smemY, smemH, gmemY, gmemH, bw } = L;
+
+  // Outer chip border
+  drawRoundedRect(ctx, 20, 12, w - 40, h - 24, 14, 'rgba(34,37,46,.95)', '#33384a');
+
+  // Title
+  ctx.fillStyle = '#76B900';
+  ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('NVIDIA GPU Die', cx, 30);
+
+  // Helper for drawing memory block
+  function memBlock(label, sublabel, y, bh, color, glow) {
+    const x = cx - bw / 2;
+    if (glow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+    }
+    drawRoundedRect(ctx, x, y, bw, bh, 8, color + '18', color + '88');
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    // Diagonal hatch
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, bw, bh, 8);
+    ctx.clip();
+    ctx.strokeStyle = color + '20';
+    ctx.lineWidth = 1;
+    for (let i = -bh; i < bw + bh; i += 10) {
+      ctx.beginPath();
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i - bh, y + bh);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Labels
+    ctx.fillStyle = color;
+    ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, cx, y + bh / 2 + 1);
+    ctx.font = '10px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = color + 'aa';
+    ctx.fillText(sublabel, cx, y + bh / 2 + 15);
+  }
+
+  // Determine which layer is selected for glow
+  const sel = currentLevel;
+
+  // SM Core
+  const coreColor = '#c084fc';
+  const coreW = bw * 0.5;
+  const coreX = cx - coreW / 2;
+  drawRoundedRect(ctx, coreX, coreY, coreW, coreH, 8, coreColor + '22', coreColor + '88');
+  ctx.fillStyle = coreColor;
+  ctx.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SM Core (CUDA Cores)', cx, coreY + coreH / 2 + 4);
+
+  // Registers
+  memBlock('Registers', '~256 KB/SM · 1 cycle', regY, regH, '#ff6b6b', sel === 0);
+  // Shared Memory
+  memBlock('Shared Memory (SMEM)', '48–164 KB/SM · ~20 cycles', smemY, smemH, '#ffd93d', sel === 1);
+  // Global Memory
+  memBlock('Global Memory (GMEM)', '40–80 GB · ~400 cycles', gmemY, gmemH, '#4ecdc4', sel === 2);
+
+  // Arrows / buses between layers
+  function drawBus(y1, y2, color, label) {
+    const arrowX = cx;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = color + '66';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(arrowX, y1);
+    ctx.lineTo(arrowX, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrow head
+    ctx.fillStyle = color + '88';
+    ctx.beginPath();
+    ctx.moveTo(arrowX - 5, y2 - 6);
+    ctx.lineTo(arrowX + 5, y2 - 6);
+    ctx.lineTo(arrowX, y2);
+    ctx.fill();
+    // Label
+    ctx.fillStyle = '#8a8f9e';
+    ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, arrowX + 10, (y1 + y2) / 2 + 3);
+  }
+
+  drawBus(coreY + coreH, regY, '#ff6b6b', 'register file');
+  drawBus(regY + regH, smemY, '#ffd93d', 'on-chip SRAM');
+  drawBus(smemY + smemH, gmemY, '#4ecdc4', 'off-chip DRAM bus');
+
+  // Bandwidth annotations on right side
+  function bwAnnotation(y, bh, text, color) {
+    const rx = cx + bw / 2 + 14;
+    ctx.fillStyle = color + '99';
+    ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, rx, y + bh / 2 + 3);
+  }
+  bwAnnotation(regY, regH, '~8 TB/s', '#ff6b6b');
+  bwAnnotation(smemY, smemH, '~1.5 TB/s', '#ffd93d');
+  bwAnnotation(gmemY, gmemH, '~2 TB/s', '#4ecdc4');
+
+  // Animated packets
+  const coreCenter = coreY + coreH;
+  const targets = [regY, smemY, gmemY];
+  const targetH = [regH, smemH, gmemH];
+
+  for (let i = packets.length - 1; i >= 0; i--) {
+    const p = packets[i];
+    p.t += p.speed;
+    if (p.t > 2) { packets.splice(i, 1); continue; }
+    const targetY = targets[p.level] + targetH[p.level] / 2;
+    const totalDist = targetY - coreCenter;
+    let py, alpha;
+    if (p.t <= 1) {
+      // Going down
+      py = coreCenter + totalDist * p.t;
+      alpha = 1;
+    } else {
+      // Returning
+      py = targetY - totalDist * (p.t - 1);
+      alpha = Math.max(0, 2 - p.t);
+    }
+    const pkSize = 10;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = '#76B900';
+    ctx.shadowBlur = 10;
+    drawRoundedRect(ctx, cx - pkSize / 2, py - pkSize / 2, pkSize, pkSize, 3, '#76B900', null);
+    ctx.shadowBlur = 0;
+    // Trailing glow
+    for (let g = 1; g <= 4; g++) {
+      const gy = p.t <= 1 ? py - g * 6 : py + g * 6;
+      ctx.globalAlpha = alpha * (0.3 - g * 0.06);
+      drawRoundedRect(ctx, cx - pkSize / 2 + g, gy - pkSize / 2 + g, pkSize - g * 2, pkSize - g * 2, 2, '#76B900', null);
+    }
+    ctx.restore();
+  }
+
+  // Pulsing indicator on selected level
+  const pulseR = 4 + Math.sin(time * 4) * 2;
+  const selY = targets[sel] + targetH[sel] / 2;
+  ctx.beginPath();
+  ctx.arc(cx - bw / 2 - 12, selY, pulseR, 0, Math.PI * 2);
+  ctx.fillStyle = LEVELS[sel].color;
+  ctx.fill();
+
+  return L;
+}
+
+// ── Roofline Canvas ──
+const roofCanvas = document.getElementById('roofCanvas');
+const aiSlider = document.getElementById('aiSlider');
+const aiValEl = document.getElementById('aiVal');
+let currentAI = 4;
+
+aiSlider.addEventListener('input', () => {
+  currentAI = +aiSlider.value;
+  aiValEl.textContent = currentAI.toFixed(1);
+});
+
+function drawRoofline(ctx, w, h) {
+  const peakGFLOPS = 20000; // 20 TFLOPS
+  const peakBW = 2000; // 2 TB/s → 2000 GB/s
+  const ridgePoint = peakGFLOPS / peakBW; // AI where we hit peak compute
+
+  const padL = 46, padR = 14, padT = 16, padB = 34;
+  const pw = w - padL - padR;
+  const ph = h - padT - padB;
+
+  // Log scales
+  const aiMin = 0.1, aiMax = 64;
+  const gMin = 10, gMax = 40000;
+  const logAI = (v) => (Math.log10(v) - Math.log10(aiMin)) / (Math.log10(aiMax) - Math.log10(aiMin));
+  const logG = (v) => (Math.log10(v) - Math.log10(gMin)) / (Math.log10(gMax) - Math.log10(gMin));
+  const toX = (ai) => padL + logAI(ai) * pw;
+  const toY = (g) => padT + ph - logG(g) * ph;
+
+  // Background
+  drawRoundedRect(ctx, 0, 0, w, h, 8, '#1a1d26', null);
+
+  // Grid lines
+  ctx.strokeStyle = '#2a2e38';
+  ctx.lineWidth = 0.5;
+  [0.1, 1, 10].forEach(ai => {
+    const x = toX(ai);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ph); ctx.stroke();
+  });
+  [100, 1000, 10000].forEach(g => {
+    const y = toY(g);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+  });
+
+  // Memory-bound region (sloped line)
+  ctx.beginPath();
+  const startAI = aiMin;
+  const endAI = ridgePoint;
+  ctx.moveTo(toX(startAI), toY(startAI * peakBW));
+  ctx.lineTo(toX(endAI), toY(endAI * peakBW));
+  ctx.strokeStyle = '#4ecdc4';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Compute-bound region (flat line)
+  ctx.beginPath();
+  ctx.moveTo(toX(endAI), toY(peakGFLOPS));
+  ctx.lineTo(toX(aiMax), toY(peakGFLOPS));
+  ctx.strokeStyle = '#ff6b6b';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Ridge point
+  ctx.beginPath();
+  ctx.arc(toX(ridgePoint), toY(peakGFLOPS), 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd93d';
+  ctx.fill();
+
+  // Labels
+  ctx.fillStyle = '#8a8f9e';
+  ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Arithmetic Intensity (FLOP/Byte)', padL + pw / 2, h - 4);
+  ctx.save();
+  ctx.translate(12, padT + ph / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('GFLOP/s', 0, 0);
+  ctx.restore();
+
+  // Region labels
+  ctx.font = '8px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = '#4ecdc4aa';
+  ctx.textAlign = 'center';
+  ctx.fillText('Memory-bound', toX(1), toY(peakGFLOPS) + 14);
+  ctx.fillStyle = '#ff6b6baa';
+  ctx.fillText('Compute-bound', toX(32), toY(peakGFLOPS) + 14);
+
+  // Axis ticks
+  ctx.fillStyle = '#666';
+  ctx.font = '8px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  [0.1, 1, 10].forEach(v => ctx.fillText(v, toX(v), padT + ph + 14));
+  ctx.textAlign = 'right';
+  [100, 1000, 10000].forEach(v => {
+    const label = v >= 1000 ? (v / 1000) + 'K' : v;
+    ctx.fillText(label, padL - 4, toY(v) + 3);
+  });
+
+  // User dot
+  const userGFLOPS = Math.min(currentAI * peakBW, peakGFLOPS);
+  const dx = toX(currentAI);
+  const dy = toY(userGFLOPS);
+
+  // Vertical dashed line from dot to x-axis
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#76B90066';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(dx, dy);
+  ctx.lineTo(dx, padT + ph);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Dot
+  ctx.beginPath();
+  ctx.arc(dx, dy, 6, 0, Math.PI * 2);
+  ctx.fillStyle = '#76B900';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Tooltip
+  ctx.fillStyle = '#e0e0e0';
+  ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = dx > padL + pw / 2 ? 'right' : 'left';
+  const tx = dx > padL + pw / 2 ? dx - 10 : dx + 10;
+  ctx.fillText((userGFLOPS / 1000).toFixed(1) + ' TFLOP/s', tx, dy - 10);
+}
+
+// ── Main animation loop ──
+let lastTime = 0;
+function animate(ts) {
+  const time = ts / 1000;
+
+  // GPU Canvas
+  {
+    const r = gpuCanvas.getBoundingClientRect();
+    if (gpuCanvas.width !== Math.round(r.width * dpr) || gpuCanvas.height !== Math.round(r.height * dpr)) {
+      gpuCanvas.width = Math.round(r.width * dpr);
+      gpuCanvas.height = Math.round(r.height * dpr);
+    }
+    const ctx = gpuCanvas.getContext('2d');
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    drawChip(ctx, r.width, r.height, time);
+    ctx.restore();
+  }
+
+  // Roofline Canvas
+  {
+    const r = roofCanvas.getBoundingClientRect();
+    if (roofCanvas.width !== Math.round(r.width * dpr) || roofCanvas.height !== Math.round(r.height * dpr)) {
+      roofCanvas.width = Math.round(r.width * dpr);
+      roofCanvas.height = Math.round(r.height * dpr);
+    }
+    const ctx = roofCanvas.getContext('2d');
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    drawRoofline(ctx, r.width, r.height);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Initialize
+updateInfo(0);
+requestAnimationFrame(animate);
+
+// Auto-spawn packets periodically for visual interest
+setInterval(() => { if (packets.length < 3) spawnPacket(currentLevel); }, 2200);
+</script>
+</body>
+</html>
