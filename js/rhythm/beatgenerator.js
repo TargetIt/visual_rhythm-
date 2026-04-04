@@ -63,41 +63,80 @@ export default class BeatGenerator {
     const defaultPatterns = {
       rhythmLibrary: {
         basic: {
-          name: "基础4拍节奏",
+          name: "Basic Quarter Notes",
           difficulty: "easy",
-          bpm: 120,
+          bpm: 118,
           timeSignature: "4/4",
           tracks: {
             0: "X---X---X---X---",
-            1: "----X---X---X---", 
-            2: "--------X---X---",
-            3: "------------X---"
+            1: "----X-----------",
+            2: "--------X-------",
+            3: "X-----------X---"
           },
-          description: "简单的四分音符，每个轨道错开一拍"
+          description: "Standard 4/4 quarter-note groove, two-thumb friendly"
         },
         eighth: {
-          name: "8分音符节奏",
-          difficulty: "medium", 
-          bpm: 140,
+          name: "Eighth Note Groove",
+          difficulty: "medium",
+          bpm: 132,
           timeSignature: "4/4",
           tracks: {
             0: "X-X-X-X-X-X-X-X-",
             1: "-X-X-X-X-X-X-X-X",
             2: "X---X---X---X---",
-            3: "----X---X---X---"
+            3: "--X-------X-----"
           },
-          description: "8分音符和4分音符混合"
+          description: "Eighth-note backbone with quarter accents and light syncopation"
+        },
+        sixteenth: {
+          name: "Sixteenth Drive",
+          difficulty: "hard",
+          bpm: 148,
+          timeSignature: "4/4",
+          tracks: {
+            0: "X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-",
+            1: "-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X-X",
+            2: "X---X---X---X---X---X---X---X---",
+            3: "---X-------X-------X-------X----"
+          },
+          description: "Continuous sixteenth feel with off-beat accents"
+        },
+        syncopation: {
+          name: "Syncopation Mix",
+          difficulty: "expert",
+          bpm: 138,
+          timeSignature: "4/4",
+          tracks: {
+            0: "X---X-x---X---x-",
+            1: "--X---X---X---X-",
+            2: "----X---x---X---",
+            3: "-X-----X-----X--"
+          },
+          description: "Classic syncopated phrasing for alternating thumbs"
+        },
+        breakbeat: {
+          name: "Breakbeat Variant",
+          difficulty: "hard",
+          bpm: 128,
+          timeSignature: "4/4",
+          tracks: {
+            0: "X---X---X-X-----",
+            1: "--X---X---X---X-",
+            2: "X-------X---X---",
+            3: "----X-x-----X---"
+          },
+          description: "Breakbeat-inspired pattern with controlled variation"
         }
       },
       visualization: {
         symbols: {
-          "X": "强音符",
-          "x": "弱音符", 
-          "-": "休止符"
+          "X": "Strong",
+          "x": "Weak",
+          "-": "Rest"
         },
         colors: {
           0: "#FF6B6B",
-          1: "#4ECDC4", 
+          1: "#4ECDC4",
           2: "#45B7D1",
           3: "#96CEB4"
         }
@@ -105,7 +144,7 @@ export default class BeatGenerator {
     };
 
     this.patternLoader.loadPatterns(defaultPatterns);
-    console.log('使用默认节奏模式数据');
+    console.log('Using built-in rhythm patterns');
   }
 
   /**
