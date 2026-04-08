@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Naive SGEMM: 朴素矩阵乘法可视化</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;overflow-x:hidden}
+  .container{max-width:1280px;margin:0 auto;padding:20px}
+  h1{text-align:center;color:#76B900;font-size:1.8rem;margin-bottom:4px;letter-spacing:1px}
+  .subtitle{text-align:center;color:#888;font-size:.95rem;margin-bottom:18px}
+  .controls{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:14px;padding:12px 18px;background:#16213e;border-radius:10px;border:1px solid #0f3460}
+  .controls label{color:#aaa;font-size:.85rem}
+  .controls input[type=range]{accent-color:#76B900;width:110px;cursor:pointer}
+  .controls .val{color:#76B900;font-weight:700;min-width:22px;text-align:center}
+  .btn{background:#0f3460;color:#76B900;border:1px solid #76B900;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;transition:all .2s}
+  .btn:hover{background:#76B900;color:#1a1a2e}
+  .btn:disabled{opacity:.4;cursor:default;background:#0f3460;color:#76B900}
+  .btn.active{background:#76B900;color:#1a1a2e}
+  .canvas-wrap{display:flex;justify-content:center;margin-bottom:14px;position:relative}
+  canvas{border-radius:8px;display:block}
+  .stats-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px}
+  .stat-card{background:#16213e;border:1px solid #0f3460;border-radius:10px;padding:14px 18px}
+  .stat-card h3{color:#76B900;font-size:.8rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .stat-card .value{font-size:1.35rem;font-weight:700;color:#fff}
+  .stat-card .unit{color:#888;font-size:.75rem;margin-left:4px}
+  .stat-card.warn{border-color:#ff6b6b}
+  .stat-card.warn .value{color:#ff6b6b}
+  .legend{background:#16213e;border:1px solid #0f3460;border-radius:10px;padding:16px 22px;margin-bottom:18px}
+  .legend h3{color:#76B900;margin-bottom:8px;font-size:.95rem}
+  .legend p{color:#aaa;font-size:.85rem;line-height:1.6;margin-bottom:6px}
+  .legend code{background:#0f3460;color:#ffd93d;padding:2px 6px;border-radius:4px;font-size:.82rem}
+  .color-key{display:flex;gap:18px;flex-wrap:wrap;margin-top:8px}
+  .color-key span{display:flex;align-items:center;gap:6px;font-size:.82rem;color:#ccc}
+  .color-key .swatch{width:14px;height:14px;border-radius:3px;display:inline-block}
+  .anim-info{text-align:center;min-height:28px;color:#ffd93d;font-size:.9rem;margin-bottom:6px;font-family:'Courier New',monospace}
+  .tooltip{position:absolute;pointer-events:none;background:rgba(15,52,96,.95);border:1px solid #76B900;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:.82rem;line-height:1.5;white-space:nowrap;z-index:10;opacity:0;transition:opacity .15s}
+  .tooltip .formula{color:#ffd93d;font-weight:700}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🟢 Naive SGEMM: 朴素矩阵乘法可视化</h1>
+  <p class="subtitle">Interactive visualization of the naive CUDA matrix multiplication kernel — hover C to explore, animate the K-loop</p>
+
+  <div class="controls">
+    <label>M: <span class="val" id="mVal">8</span></label>
+    <label>K: <input type="range" id="kSlider" min="4" max="16" value="8"> <span class="val" id="kVal">8</span></label>
+    <label>N: <span class="val" id="nVal">8</span></label>
+    <span style="color:#444">│</span>
+    <button class="btn" id="btnReset" title="Regenerate random matrices">🔄 Reset</button>
+    <button class="btn" id="btnPlay" title="Animate K-loop for selected C cell">▶ Play</button>
+    <button class="btn" id="btnStep" title="Step one iteration">⏭ Step</button>
+    <button class="btn" id="btnStop" title="Stop animation" disabled>⏹ Stop</button>
+  </div>
+
+  <div class="anim-info" id="animInfo">&nbsp;</div>
+
+  <div class="canvas-wrap">
+    <canvas id="cv"></canvas>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="stats-panel" id="statsPanel"></div>
+
+  <div class="legend">
+    <h3>📖 How Naive SGEMM Works</h3>
+    <p>Each thread computes one element of <code>C[i][j]</code> by iterating over the shared K-dimension:</p>
+    <p><code>C[i][j] = Σ (k=0..K-1) A[i][k] × B[k][j]</code></p>
+    <p>This kernel reads <strong>K</strong> elements from a row of A and <strong>K</strong> elements from a column of B for every output element, with <strong>no data reuse</strong> across threads — making it severely <span style="color:#ff6b6b;font-weight:700">memory-bound</span>.</p>
+    <p>The arithmetic intensity is only <code>2 / (2×4) = 0.25 FLOP/Byte</code>, far below what GPUs need to be compute-bound.</p>
+    <div class="color-key">
+      <span><span class="swatch" style="background:#ff6b6b"></span> Matrix A (row highlight)</span>
+      <span><span class="swatch" style="background:#4ecdc4"></span> Matrix B (column highlight)</span>
+      <span><span class="swatch" style="background:#ffd93d"></span> Matrix C (result / active cell)</span>
+      <span><span class="swatch" style="background:#76B900"></span> NVIDIA green accent</span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const tooltip = $('tooltip');
+const dpr = Math.max(window.devicePixelRatio || 1, 1);
+
+/* ── State ──────────────────────────────────────── */
+let M = 8, K = 8, N = 8;
+let A = [], B = [], C = [];
+let hoverC = null;          // {r, c} in C
+let animTarget = null;      // {r, c} selected for animation
+let animK = -1;             // current k step (-1 = not animating)
+let animRunSum = 0;
+let animPlaying = false;
+let animTimer = null;
+
+/* ── Layout constants ───────────────────────────── */
+const CELL = 34, PAD = 6, GAP = 52, HDR = 30, LABEL_W = 48;
+const BYTES_PER_FLOAT = 4;
+
+function totalW () { return LABEL_W + K * CELL + GAP + K * CELL + GAP + N * CELL + PAD * 2 }
+function totalH () { return HDR + Math.max(M, K) * CELL + PAD * 2 }
+
+/* Origins for each matrix (top-left of grid) */
+function originA () { return { x: PAD + LABEL_W, y: HDR + PAD } }
+function originB () { return { x: PAD + LABEL_W + K * CELL + GAP, y: HDR + PAD } }
+function originC () { return { x: PAD + LABEL_W + K * CELL + GAP + K * CELL + GAP, y: HDR + PAD } }
+
+/* ── Matrix helpers ─────────────────────────────── */
+function randMat (rows, cols) {
+  return Array.from({length: rows}, () => Array.from({length: cols}, () => Math.floor(Math.random() * 10)));
+}
+function computeC () {
+  C = Array.from({length: M}, (_, i) => Array.from({length: N}, (_, j) => {
+    let s = 0; for (let k = 0; k < K; k++) s += A[i][k] * B[k][j]; return s;
+  }));
+}
+function initMatrices () { A = randMat(M, K); B = randMat(K, N); computeC(); }
+
+/* ── Drawing ────────────────────────────────────── */
+function resizeCanvas () {
+  const w = totalW(), h = totalH();
+  cv.width = w * dpr; cv.height = h * dpr;
+  cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function drawCell (ox, oy, r, c, val, bg, fg, glow) {
+  const x = ox + c * CELL, y = oy + r * CELL;
+  if (glow) {
+    ctx.save();
+    ctx.shadowColor = glow; ctx.shadowBlur = 12;
+    ctx.fillStyle = glow; ctx.globalAlpha = 0.35;
+    ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+    ctx.restore();
+  }
+  ctx.fillStyle = bg;
+  ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeRect(x + .5, y + .5, CELL - 1, CELL - 1);
+  ctx.fillStyle = fg; ctx.font = '700 12px "Courier New",monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(val, x + CELL / 2, y + CELL / 2);
+}
+
+function draw () {
+  ctx.clearRect(0, 0, cv.width / dpr, cv.height / dpr);
+  const oA = originA(), oB = originB(), oC = originC();
+
+  /* ── Matrix labels ── */
+  ctx.font = '700 15px sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff6b6b'; ctx.fillText('A', oA.x + K * CELL / 2, 14);
+  ctx.fillStyle = '#4ecdc4'; ctx.fillText('B', oB.x + K * CELL / 2, 14);
+  ctx.fillStyle = '#ffd93d'; ctx.fillText('C', oC.x + N * CELL / 2, 14);
+
+  ctx.font = '600 10px sans-serif'; ctx.fillStyle = '#666';
+  ctx.fillText(`${M}×${K}`, oA.x + K * CELL / 2, 26);
+  ctx.fillText(`${K}×${N}`, oB.x + K * CELL / 2, 26);
+  ctx.fillText(`${M}×${N}`, oC.x + N * CELL / 2, 26);
+
+  const hr = hoverC ? hoverC.r : (animTarget ? animTarget.r : -1);
+  const hc = hoverC ? hoverC.c : (animTarget ? animTarget.c : -1);
+  const isAnim = animK >= 0 && animTarget;
+
+  /* ── Draw A ── */
+  for (let r = 0; r < M; r++) for (let c = 0; c < K; c++) {
+    let bg = '#1e2a45', fg = '#ccc', glow = null;
+    if (hr >= 0 && r === hr) { bg = 'rgba(255,107,107,0.22)'; fg = '#ff6b6b'; }
+    if (isAnim && r === animTarget.r && c === animK) { bg = '#ff6b6b'; fg = '#fff'; glow = '#ff6b6b'; }
+    drawCell(oA.x, oA.y, r, c, A[r][c], bg, fg, glow);
+  }
+
+  /* ── Draw B ── */
+  for (let r = 0; r < K; r++) for (let c = 0; c < N; c++) {
+    let bg = '#1e2a45', fg = '#ccc', glow = null;
+    if (hc >= 0 && c === hc) { bg = 'rgba(78,205,196,0.18)'; fg = '#4ecdc4'; }
+    if (isAnim && c === animTarget.c && r === animK) { bg = '#4ecdc4'; fg = '#1a1a2e'; glow = '#4ecdc4'; }
+    drawCell(oB.x, oB.y, r, c, B[r][c], bg, fg, glow);
+  }
+
+  /* ── Draw C ── */
+  for (let r = 0; r < M; r++) for (let c = 0; c < N; c++) {
+    let bg = '#1e2a45', fg = '#aaa', glow = null;
+    if (hr >= 0 && hc >= 0 && r === hr && c === hc) { bg = '#ffd93d'; fg = '#1a1a2e'; glow = '#ffd93d'; }
+    else if (hr >= 0 && hc >= 0 && (r === hr || c === hc)) { bg = 'rgba(255,217,61,0.10)'; fg = '#ffd93d'; }
+    drawCell(oC.x, oC.y, r, c, C[r][c], bg, fg, glow);
+  }
+
+  /* ── Row / col index labels ── */
+  ctx.font = '600 9px monospace'; ctx.fillStyle = '#555'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let r = 0; r < M; r++) ctx.fillText(r, oA.x - 5, oA.y + r * CELL + CELL / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  for (let c = 0; c < K; c++) ctx.fillText(c, oA.x + c * CELL + CELL / 2, oA.y - 2);
+
+  /* ── Connecting arcs during hover ── */
+  if (hr >= 0 && hc >= 0 && !isAnim) {
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+    // A row → C row
+    ctx.strokeStyle = 'rgba(255,107,107,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(oA.x + K * CELL, oA.y + hr * CELL + CELL / 2);
+    ctx.lineTo(oC.x, oC.y + hr * CELL + CELL / 2);
+    ctx.stroke();
+    // B col → C col
+    ctx.strokeStyle = 'rgba(78,205,196,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(oB.x + hc * CELL + CELL / 2, oB.y + K * CELL);
+    ctx.lineTo(oC.x + hc * CELL + CELL / 2, oC.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/* ── Tooltip ────────────────────────────────────── */
+function showTooltip (x, y, r, c) {
+  tooltip.innerHTML = `<span class="formula">C[${r}][${c}] = Σ A[${r}][k] × B[k][${c}]</span> &nbsp;for k=0..${K - 1}<br>` +
+    `Result = <b>${C[r][c]}</b>`;
+  tooltip.style.opacity = 1;
+  const rect = cv.getBoundingClientRect();
+  let tx = x + 16, ty = y - 50;
+  if (tx + 260 > rect.width) tx = x - 260;
+  if (ty < 0) ty = y + 20;
+  tooltip.style.left = tx + 'px'; tooltip.style.top = ty + 'px';
+}
+function hideTooltip () { tooltip.style.opacity = 0; }
+
+/* ── Mouse interaction ──────────────────────────── */
+cv.addEventListener('mousemove', e => {
+  const rect = cv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const oC_ = originC();
+  const col = Math.floor((mx - oC_.x) / CELL);
+  const row = Math.floor((my - oC_.y) / CELL);
+  if (col >= 0 && col < N && row >= 0 && row < M) {
+    hoverC = {r: row, c: col};
+    showTooltip(mx, my, row, col);
+  } else {
+    hoverC = null; hideTooltip();
+  }
+  draw();
+});
+cv.addEventListener('mouseleave', () => { hoverC = null; hideTooltip(); draw(); });
+
+cv.addEventListener('click', e => {
+  const rect = cv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const oC_ = originC();
+  const col = Math.floor((mx - oC_.x) / CELL);
+  const row = Math.floor((my - oC_.y) / CELL);
+  if (col >= 0 && col < N && row >= 0 && row < M) {
+    stopAnim();
+    animTarget = {r: row, c: col};
+    animK = -1; animRunSum = 0;
+    $('animInfo').textContent = `Selected C[${row}][${col}] — press Play or Step`;
+    draw();
+  }
+});
+
+/* ── Animation ──────────────────────────────────── */
+function stepAnim () {
+  if (!animTarget) return;
+  animK++;
+  if (animK >= K) {
+    $('animInfo').innerHTML = `✅ C[${animTarget.r}][${animTarget.c}] = <b>${animRunSum}</b> — done!`;
+    if (animPlaying) stopAnim();
+    return;
+  }
+  const a = A[animTarget.r][animK], b = B[animK][animTarget.c];
+  const prod = a * b;
+  animRunSum += prod;
+  $('animInfo').innerHTML =
+    `k=${animK}: A[${animTarget.r}][${animK}]×B[${animK}][${animTarget.c}] = ${a}×${b} = ${prod} &nbsp;│&nbsp; running sum = <b>${animRunSum}</b>`;
+  draw();
+}
+
+function playAnim () {
+  if (!animTarget) { $('animInfo').textContent = '⚠ Click a cell in C first!'; return; }
+  if (animK >= K - 1 && animK !== -1) { animK = -1; animRunSum = 0; }
+  animPlaying = true;
+  $('btnPlay').disabled = true; $('btnStop').disabled = false;
+  animTimer = setInterval(() => {
+    stepAnim();
+    if (animK >= K) stopAnim();
+  }, 500);
+}
+
+function stopAnim () {
+  animPlaying = false; clearInterval(animTimer); animTimer = null;
+  $('btnPlay').disabled = false; $('btnStop').disabled = true;
+}
+
+$('btnPlay').addEventListener('click', playAnim);
+$('btnStep').addEventListener('click', () => {
+  if (!animTarget) { $('animInfo').textContent = '⚠ Click a cell in C first!'; return; }
+  if (animK >= K) { animK = -1; animRunSum = 0; }
+  stepAnim();
+});
+$('btnStop').addEventListener('click', stopAnim);
+$('btnReset').addEventListener('click', () => { stopAnim(); animTarget = null; animK = -1; animRunSum = 0; $('animInfo').innerHTML = '&nbsp;'; initMatrices(); draw(); updateStats(); });
+
+/* ── K slider ───────────────────────────────────── */
+$('kSlider').addEventListener('input', e => {
+  K = +e.target.value; $('kVal').textContent = K;
+  stopAnim(); animTarget = null; animK = -1; animRunSum = 0; $('animInfo').innerHTML = '&nbsp;';
+  initMatrices(); resizeCanvas(); draw(); updateStats();
+});
+
+/* ── Stats panel ────────────────────────────────── */
+function updateStats () {
+  const FLOPS_PER_ELEM = 2;        // one multiply + one add
+  const READS_PER_ELEM = 2;        // one from A, one from B
+  const flops = FLOPS_PER_ELEM * M * N * K;
+  const reads = READS_PER_ELEM * M * N * K;
+  const bytes = reads * BYTES_PER_FLOAT;
+  const ai = (FLOPS_PER_ELEM / (READS_PER_ELEM * BYTES_PER_FLOAT)).toFixed(2);
+  $('statsPanel').innerHTML = `
+    <div class="stat-card"><h3>Total FLOPs</h3><div class="value">${flops.toLocaleString()}<span class="unit">FLOPs</span></div></div>
+    <div class="stat-card"><h3>GMEM Reads (no reuse)</h3><div class="value">${reads.toLocaleString()}<span class="unit">floats</span></div><div style="color:#888;font-size:.75rem;margin-top:4px">${bytes.toLocaleString()} bytes</div></div>
+    <div class="stat-card"><h3>Arithmetic Intensity</h3><div class="value">${ai}<span class="unit">FLOP/Byte</span></div></div>
+    <div class="stat-card warn"><h3>Bottleneck</h3><div class="value">⚠ Memory Bound!</div><div style="color:#aaa;font-size:.75rem;margin-top:4px">AI ≪ GPU peak FLOP/Byte ratio</div></div>
+  `;
+}
+
+/* ── Init ───────────────────────────────────────── */
+initMatrices(); resizeCanvas(); draw(); updateStats();
+</script>
+</body>
+</html>
