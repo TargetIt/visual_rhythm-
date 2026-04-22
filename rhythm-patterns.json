@@ -64,6 +64,266 @@
         "3": "----X-x-----X---"
       },
       "description": "Breakbeat-inspired pattern with controlled variation"
+    },
+    "folk_01_stable_downbeat": {
+      "name": "稳定强拍",
+      "difficulty": "easy",
+      "bpm": 112,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X---X---X---X---",
+        "1": "----X-------X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "均匀四拍骨架，适合入门节拍训练"
+    },
+    "folk_02_weak_fill": {
+      "name": "弱拍补点",
+      "difficulty": "easy",
+      "bpm": 114,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X---X---X---X---",
+        "1": "--X-----X-----X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "在弱拍补点，强化拍间感知"
+    },
+    "folk_03_even_eighths": {
+      "name": "八分均分",
+      "difficulty": "easy",
+      "bpm": 122,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-X-X-X-X-X-X-X-",
+        "1": "----X-------X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "均匀八分音符密度，提升稳定输入"
+    },
+    "folk_04_dense_then_sparse": {
+      "name": "前密后疏",
+      "difficulty": "medium",
+      "bpm": 124,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-X-X---X-X-X---",
+        "1": "----X-------X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "前半密集后半留白，强调呼吸变化"
+    },
+    "folk_05_late_accent": {
+      "name": "后置重音",
+      "difficulty": "medium",
+      "bpm": 118,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "---X---X---X---X",
+        "1": "X-------X-------",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "重音后置形成反拍感"
+    },
+    "folk_06_call_response": {
+      "name": "呼应结构（问答）",
+      "difficulty": "medium",
+      "bpm": 120,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X---X-X-----X---",
+        "1": "----X---X-------",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "主辅轨问答式对话结构"
+    },
+    "folk_07_double_hit_basic": {
+      "name": "双击基础",
+      "difficulty": "medium",
+      "bpm": 126,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X--XX---X--XX---",
+        "1": "----X-------X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "引入双击滚点，连接基础与连击"
+    },
+    "folk_08_combo_variation": {
+      "name": "连击变化",
+      "difficulty": "hard",
+      "bpm": 132,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-XX-X--X-XX-X--",
+        "1": "----X-X-----X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "不规则连击组合，考验手指控制"
+    },
+    "folk_09_combo_with_response": {
+      "name": "连击+呼应",
+      "difficulty": "hard",
+      "bpm": 134,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X--XX---X-XX----",
+        "1": "----X-X---X-----",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "连击与主辅呼应叠加，游戏性提升"
+    },
+    "folk_10_basic_offset": {
+      "name": "基础错位",
+      "difficulty": "medium",
+      "bpm": 122,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X---X---X---X---",
+        "1": "--X-----X-----X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "主辅轨基础错位练习"
+    },
+    "folk_11_halfbeat_offset": {
+      "name": "半拍错位",
+      "difficulty": "hard",
+      "bpm": 136,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-X-X-X-X-X-X-X-",
+        "1": "-X-X-X-X-X-X-X-X",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "完全交错的半拍错位结构"
+    },
+    "folk_12_offset_with_combo": {
+      "name": "错位+连击",
+      "difficulty": "hard",
+      "bpm": 138,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-XX-X--XX-X-X--",
+        "1": "--X---X---X---X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "错位节奏叠加连击，提升协调难度"
+    },
+    "folk_13_yangko": {
+      "name": "秧歌节奏",
+      "difficulty": "medium",
+      "bpm": 126,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-X-X---X-X-X---",
+        "1": "----X-------X---",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "典型秧歌律动，前后段呼吸清晰"
+    },
+    "folk_14_gong_drum_classic": {
+      "name": "锣鼓点（经典）",
+      "difficulty": "hard",
+      "bpm": 128,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X--X-X--XX--X---",
+        "1": "----X---X-------",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "经典锣鼓点骨架，重音层次分明"
+    },
+    "folk_15_three_three_two": {
+      "name": "3+3+2结构",
+      "difficulty": "hard",
+      "bpm": 130,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X--X--X-X--X----",
+        "1": "----X-----X-----",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "关键3+3+2分组，强化复合律动"
+    },
+    "folk_16_marching_drive": {
+      "name": "行进鼓（推进感）",
+      "difficulty": "hard",
+      "bpm": 140,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-X-XX-X-X-XX-X-",
+        "1": "--X---X---X---X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "连续推进型行进鼓律动"
+    },
+    "folk_17_high_density_offset": {
+      "name": "高密度错位",
+      "difficulty": "expert",
+      "bpm": 146,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-XX-XX-X-XX-X--",
+        "1": "-X---X--X---X-X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "高密度音符与错位并行"
+    },
+    "folk_18_irregular_syncopation": {
+      "name": "不规则切分",
+      "difficulty": "expert",
+      "bpm": 142,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X--XX-X---XX-X--",
+        "1": "---X----X----X--",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "不规则切分带来强烈律动张力"
+    },
+    "folk_19_combo_illusion": {
+      "name": "连击错觉型",
+      "difficulty": "expert",
+      "bpm": 148,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-XX-X-XX--X-XX-",
+        "1": "--X-X----X-X----",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "连击错觉感明显，读谱压力更高"
+    },
+    "folk_20_ultimate_visual_chaos": {
+      "name": "终极（视觉混乱型）",
+      "difficulty": "expert",
+      "bpm": 152,
+      "timeSignature": "4/4",
+      "tracks": {
+        "0": "X-XX-XX-X-XX-XX-",
+        "1": "-X-X---X--X-X-X-",
+        "2": "----------------",
+        "3": "----------------"
+      },
+      "description": "高密度终极组合，视觉与操作双重挑战"
     }
   },
   "visualization": {
